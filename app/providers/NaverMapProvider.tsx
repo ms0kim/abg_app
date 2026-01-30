@@ -31,7 +31,7 @@ const loadCallbacks: (() => void)[] = [];
 
 export function NaverMapProvider({
   children,
-  clientId = '0cacc5gdmw'
+  clientId = process.env.NEXT_PUBLIC_NAVER_CLIENT_ID || ''
 }: NaverMapProviderProps) {
   const [isLoaded, setIsLoaded] = useState(false);
 

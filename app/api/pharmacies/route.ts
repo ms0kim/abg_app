@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
 
-const SERVICE_KEY = '863eb4017203c5738f818b59039fcc77d35a7849d9f9c1b7ea2bffeedc5133a4';
+const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 
 // 좌표 기반 약국 검색 API (getParmacyLcinfoInqire)
 const PHARMACY_LOCATION_API = 'http://apis.data.go.kr/B552657/ErmctInsttInfoInqireService/getParmacyLcinfoInqire';

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse } from '@/app/utils/apiUtils';
 import { checkIsOpen, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
 
-const SERVICE_KEY = '863eb4017203c5738f818b59039fcc77d35a7849d9f9c1b7ea2bffeedc5133a4';
+const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 // 병원 기본정보 조회 (상세 정보, 영업시간 포함)
 const ONE_HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlBassInfoInqire';
 
