@@ -39,10 +39,9 @@ const CATEGORY_MAP: Record<string, string> = {
     I: '기타',
 };
 
-async function fetchHospitalsByType(
+async function fetchHospitalsLocation(
     lat: number,
     lng: number,
-    qd: 'B' | 'C',
     numOfRows: number
 ): Promise<HospitalApiItem[]> {
     if (!SERVICE_KEY) {
@@ -54,29 +53,25 @@ async function fetchHospitalsByType(
     // ServiceKey는 인코딩된 상태로 오므로 searchParams.set 대신 직접 문자열로 연결
     url.searchParams.set('WGS84_LAT', String(lat));
     url.searchParams.set('WGS84_LON', String(lng));
-    url.searchParams.set('QD', qd);
     url.searchParams.set('numOfRows', String(numOfRows));
     url.searchParams.set('pageNo', '1');
 
     const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
 
-    const typeName = qd === 'B' ? '병원' : '의원';
-    // console.log(`Fetching ${typeName}: lat=${lat}, lng=${lng}`);
-
-
+    console.log(`Fetching hospitals via Location API: lat=${lat}, lng=${lng}`);
 
     try {
         const response = await fetchWithRetry(finalUrl);
 
         if (!response.ok) {
-            console.error(`${typeName} API 응답 에러:`, response.status);
+            console.error(`Hospital Location API 응답 에러:`, response.status);
             return [];
         }
 
         const xmlText = await response.text();
         return parseXmlResponse<HospitalApiItem>(xmlText);
     } catch (error) {
-        console.error(`${typeName} API 호출 실패:`, error);
+        console.error(`Hospital Location API 호출 실패:`, error);
         return [];
     }
 }
@@ -108,7 +103,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const lat = parseFloat(searchParams.get('lat') || '');
         const lng = parseFloat(searchParams.get('lng') || '');
-        const numOfRows = parseInt(searchParams.get('numOfRows') || '30', 10);
+        const numOfRows = parseInt(searchParams.get('numOfRows') || '100', 10); // 한 번에 많이 가져와서 필터링
 
         if (isNaN(lat) || isNaN(lng)) {
             return NextResponse.json(
@@ -117,19 +112,28 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        console.log(`Fetching nearby hospitals (dual search): lat=${lat}, lng=${lng}`);
+        console.log(`Fetching nearby hospitals: lat=${lat}, lng=${lng}`);
 
         const currentDate = new Date();
 
-        // 병원(B)과 의원(C) 병렬 조회
-        const [hospitals, clinics] = await Promise.all([
-            fetchHospitalsByType(lat, lng, 'B', numOfRows),
-            fetchHospitalsByType(lat, lng, 'C', numOfRows),
-        ]);
+        // 위치 기반 통합 조회 (QD 파라미터 제외하여 전체 로드)
+        const allItems = await fetchHospitalsLocation(lat, lng, numOfRows);
 
-        const allItems = [...hospitals, ...clinics];
+        // B(병원), C(의원) 만 필터링
+        const filteredItems = allItems.filter(item => item.dutyDiv === 'B' || item.dutyDiv === 'C');
 
-        const places = allItems
+        console.log(`API returned ${allItems.length} items. Filtered (B/C): ${filteredItems.length}`);
+
+        // 디버깅: 첫 번째 아이템의 dutyTime 필드 확인
+        if (filteredItems.length > 0) {
+            console.log('Sample item dutyTime:', {
+                name: filteredItems[0].dutyName,
+                time1s: filteredItems[0].dutyTime1s,
+                time1c: filteredItems[0].dutyTime1c
+            });
+        }
+
+        const places = filteredItems
             .map((item) => mapItemToPlace(item, currentDate))
             .filter((place): place is PlaceResponse => place !== null);
 
@@ -137,11 +141,19 @@ export async function GET(request: NextRequest) {
         places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
         const uniquePlaces = removeDuplicatesByCoords(places);
 
-        console.log(`Found ${uniquePlaces.length} hospitals/clinics`);
+        const openCount = uniquePlaces.filter(p => p.isOpen).length;
+        const closedCount = uniquePlaces.length - openCount;
+        console.log(`Found ${uniquePlaces.length} hospitals/clinics (Open: ${openCount}, Closed: ${closedCount})`);
 
         return NextResponse.json({
             success: true,
             count: uniquePlaces.length,
+            debug: {
+                totalFetched: allItems.length,
+                filteredCount: filteredItems.length,
+                firstItemRaw: allItems.length > 0 ? allItems[0] : null,
+                filterCriteria: "dutyDiv === 'B' || dutyDiv === 'C'"
+            },
             data: uniquePlaces,
         });
     } catch (error) {

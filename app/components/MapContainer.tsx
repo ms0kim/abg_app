@@ -20,6 +20,11 @@ export function MapContainer({
     onRefreshLocation,
     onMapIdle,
 }: MapContainerProps) {
+    useEffect(() => {
+        const openCount = places.filter(p => p.isOpen).length;
+        const closedCount = places.length - openCount;
+        console.log(`MapContainer received ${places.length} places (Open: ${openCount}, Closed: ${closedCount})`);
+    }, [places]);
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<naver.maps.Map | null>(null);
     const markersRef = useRef<naver.maps.Marker[]>([]);
