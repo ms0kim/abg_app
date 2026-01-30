@@ -1,8 +1,9 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse } from '@/app/utils/apiUtils';
 import { checkIsOpen, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
 
-const SERVICE_KEY = process.env.NEXT_PUBLIC_DATA_GO_KR_SERVICE_KEY || '';
+const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 // 병원 기본정보 조회 (상세 정보, 영업시간 포함)
 const ONE_HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlBassInfoInqire';
 
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
 
         if (!hpid) {
             return NextResponse.json(
-                { success: false, error: 'hpid 파라미터가 필요합니다.', data: null },
+                { success: false, error: 'HPID가 필요합니다.' },
                 { status: 400 }
             );
         }
@@ -29,18 +30,19 @@ export async function GET(request: NextRequest) {
         if (!SERVICE_KEY) {
             console.error('공공데이터 API 서비스 키가 설정되지 않았습니다.');
             return NextResponse.json(
-                { success: false, error: '서버 설정 오류', data: null },
+                { success: false, error: 'API 키 설정 오류' },
                 { status: 500 }
             );
         }
 
         const url = new URL(ONE_HOSPITAL_API_URL);
-        url.searchParams.set('ServiceKey', SERVICE_KEY);
         url.searchParams.set('HPID', hpid);
 
-        console.log(`Fetching hospital detail: hpid=${hpid}`);
+        const finalUrl = `${url.toString()}& ServiceKey=${SERVICE_KEY} `;
 
-        const response = await fetchWithRetry(url.toString());
+        console.log(`Fetching hospital detail: hpid = ${hpid} `);
+
+        const response = await fetchWithRetry(finalUrl);
 
         if (!response.ok) {
             console.error('병원 상세 API 응답 에러:', response.status);

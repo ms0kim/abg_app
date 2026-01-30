@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
 import { checkIsOpen, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
 
-const SERVICE_KEY = process.env.NEXT_PUBLIC_DATA_GO_KR_SERVICE_KEY || '';
+const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 const HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlMdcncLcinfoInqire';
 
 interface HospitalApiItem extends TimeFields {
@@ -51,18 +51,22 @@ async function fetchHospitalsByType(
     }
 
     const url = new URL(HOSPITAL_API_URL);
-    url.searchParams.set('ServiceKey', SERVICE_KEY);
+    // ServiceKey는 인코딩된 상태로 오므로 searchParams.set 대신 직접 문자열로 연결
     url.searchParams.set('WGS84_LAT', String(lat));
     url.searchParams.set('WGS84_LON', String(lng));
     url.searchParams.set('QD', qd);
     url.searchParams.set('numOfRows', String(numOfRows));
     url.searchParams.set('pageNo', '1');
 
+    const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
+
     const typeName = qd === 'B' ? '병원' : '의원';
-    console.log(`Fetching ${typeName}: lat=${lat}, lng=${lng}`);
+    // console.log(`Fetching ${typeName}: lat=${lat}, lng=${lng}`);
+
+
 
     try {
-        const response = await fetchWithRetry(url.toString());
+        const response = await fetchWithRetry(finalUrl);
 
         if (!response.ok) {
             console.error(`${typeName} API 응답 에러:`, response.status);

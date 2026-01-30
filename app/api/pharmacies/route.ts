@@ -103,16 +103,17 @@ async function fetchPharmaciesByLocation(
     }
 
     const url = new URL(PHARMACY_LOCATION_API);
-    url.searchParams.set('ServiceKey', SERVICE_KEY);
     url.searchParams.set('WGS84_LON', String(lng));
     url.searchParams.set('WGS84_LAT', String(lat));
     url.searchParams.set('numOfRows', String(numOfRows));
     url.searchParams.set('pageNo', '1');
 
+    const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
+
     console.log(`Fetching pharmacies by location: lat=${lat}, lng=${lng}`);
 
     try {
-        const response = await fetchWithRetry(url.toString());
+        const response = await fetchWithRetry(finalUrl);
 
         if (!response.ok) {
             console.error('약국 API 응답 에러:', response.status);
