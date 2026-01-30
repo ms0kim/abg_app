@@ -9,13 +9,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: '동네건강지도',
-  description: '내 주변 병원과 약국을 쉽게 찾아보세요',
+  title: '아프면 바로가',
+  description: '지금 바로 갈 수 있는 병원과 약국이에요',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: '동네건강지도',
+    title: '아프면 바로가',
   },
   formatDetection: {
     telephone: false,

@@ -39,7 +39,6 @@ export function MapContainer({
 
         // window.naver.maps가 실제로 존재하는지 확인
         if (!window.naver?.maps) {
-            console.error('Naver Maps SDK not loaded');
             return;
         }
 
@@ -48,7 +47,7 @@ export function MapContainer({
         try {
             const map = new window.naver.maps.Map(mapRef.current, {
                 center: new window.naver.maps.LatLng(defaultCenter.lat, defaultCenter.lng),
-                zoom: 15,
+                zoom: 16,
                 minZoom: 10,
                 maxZoom: 19,
                 zoomControl: true,
@@ -115,6 +114,9 @@ export function MapContainer({
                     return;
                 }
 
+                // 지도 이동 시 팝업 닫기
+                setSelectedCluster(null);
+
                 const map = mapInstanceRef.current!;
                 const center = map.getCenter() as naver.maps.LatLng;
                 const mapBounds = map.getBounds() as naver.maps.LatLngBounds;
@@ -179,20 +181,56 @@ export function MapContainer({
 
     // 장소들을 좌표별로 클러스터링
     const clusterPlaces = useCallback((places: Place[]) => {
-        const clusters = new Map<string, Place[]>();
+        const clusters: Place[][] = [];
 
         places.forEach((place) => {
-            // 좌표를 키로 사용 (소수점 6자리까지 - 약 0.1m 정밀도)
-            // API에서 문자열로 올 수 있으므로 Number로 변환
-            const key = `${Number(place.lat).toFixed(6)},${Number(place.lng).toFixed(6)}`;
+            let matchedCluster: Place[] | null = null;
 
-            if (!clusters.has(key)) {
-                clusters.set(key, []);
+            // 기존 클러스터들과 비교
+            for (const cluster of clusters) {
+                const representative = cluster[0];
+
+                // 1. 주소가 같으면 같은 클러스터 (가장 강력한 조건)
+                if (place.address && representative.address && place.address === representative.address) {
+                    matchedCluster = cluster;
+                    break;
+                }
+
+                // 2. 거리(distance)가 비슷하고 물리적 위치도 가까우면 같은 클러스터
+                // 사용자가 "나와 떨어진 거리의 기준"으로 묶이길 원함
+                if (place.distance !== undefined && representative.distance !== undefined) {
+                    const distanceDiff = Math.abs(place.distance - representative.distance);
+
+                    // 거리가 10m 이내로 차이나면 같은 거리로 간주
+                    if (distanceDiff <= 10) {
+                        const latDiff = Math.abs(place.lat - representative.lat);
+                        const lngDiff = Math.abs(place.lng - representative.lng);
+
+                        // 좌표상으로도 가까워야 함 (약 50m 이내, 0.0005도)
+                        if (latDiff < 0.0005 && lngDiff < 0.0005) {
+                            matchedCluster = cluster;
+                            break;
+                        }
+                    }
+                }
+
+                // 3. 좌표 정밀 일치 (백업)
+                // 소수점 6자리 오차 범위 (약 0.1m)
+                if (Math.abs(place.lat - representative.lat) < 0.000005 &&
+                    Math.abs(place.lng - representative.lng) < 0.000005) {
+                    matchedCluster = cluster;
+                    break;
+                }
             }
-            clusters.get(key)!.push(place);
+
+            if (matchedCluster) {
+                matchedCluster.push(place);
+            } else {
+                clusters.push([place]);
+            }
         });
 
-        return Array.from(clusters.values());
+        return clusters;
     }, []);
 
     // 클러스터 마커 생성
@@ -220,19 +258,19 @@ export function MapContainer({
                     <div style="
                         position: relative;
                         z-index: 2;
-                        width: 44px;
-                        height: 44px;
-                        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                        width: 36px;
+                        height: 36px;
+                        background: #ffffff;
                         border-radius: 50%;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-                        border: 3px solid white;
+                        border: 2px solid #3b82f6;
                     ">
                         <span style="
-                            color: white;
-                            font-size: 16px;
+                            color: #2563eb;
+                            font-size: 15px;
                             font-weight: bold;
                             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                         ">${count}</span>
@@ -242,10 +280,10 @@ export function MapContainer({
                         z-index: 1;
                         width: 0;
                         height: 0;
-                        border-left: 10px solid transparent;
-                        border-right: 10px solid transparent;
-                        border-top: 10px solid #2563eb;
-                        margin-top: -3px;
+                        border-left: 8px solid transparent;
+                        border-right: 8px solid transparent;
+                        border-top: 8px solid #3b82f6;
+                        margin-top: -2px;
                     "></div>
                 </div>
             `;
@@ -264,13 +302,28 @@ export function MapContainer({
             window.naver.maps.Event.addListener(marker, 'click', () => {
                 if (!mapInstanceRef.current) return;
 
-                const position = marker.getPosition() as naver.maps.LatLng;
-                const projection = mapInstanceRef.current.getProjection();
-                const point = projection.fromCoordToOffset(position);
+                const map = mapInstanceRef.current;
+                const position = marker.getPosition();
+                const projection = map.getProjection();
+
+                // 마커의 오프셋 좌표
+                const offset = projection.fromCoordToOffset(position);
+
+                // 현재 지도 영역의 좌상단 오프셋 좌표 구하기
+                const bounds = map.getBounds() as naver.maps.LatLngBounds;
+                const northWest = new window.naver.maps.LatLng(
+                    bounds.getNE().lat(),
+                    bounds.getSW().lng()
+                );
+                const topLeft = projection.fromCoordToOffset(northWest);
+
+                // 지도 컨테이너 기준 상대 좌표 계산
+                const x = offset.x - topLeft.x;
+                const y = offset.y - topLeft.y;
 
                 setSelectedCluster({
                     places: clusterPlaces,
-                    position: { x: point.x, y: point.y },
+                    position: { x, y },
                 });
             });
 
@@ -286,13 +339,22 @@ export function MapContainer({
 
             const isHospital = place.type === 'hospital';
 
-            // 병원: 빨강(영업중) / 회색(영업종료)
-            // 약국: 초록(영업중) / 회색(영업종료)
-            let bgColor: string;
+            // 병원: Rose-Pink Gradient
+            // 약국: Emerald-Teal Gradient
+            let bgStyle: string;
+            let arrowColor: string;
+
             if (place.isOpen) {
-                bgColor = isHospital ? '#ef4444' : '#22c55e'; // 빨강 / 초록
+                if (isHospital) {
+                    bgStyle = 'linear-gradient(to right, #f43f5e, #ec4899)'; // rose-500 to pink-500
+                    arrowColor = '#f43f5e'; // rose-500
+                } else {
+                    bgStyle = 'linear-gradient(to right, #10b981, #14b8a6)'; // emerald-500 to teal-500
+                    arrowColor = '#10b981'; // emerald-500
+                }
             } else {
-                bgColor = '#9ca3af'; // 회색
+                bgStyle = '#9ca3af'; // gray-400
+                arrowColor = '#9ca3af';
             }
 
             const icon = isHospital
@@ -300,7 +362,7 @@ export function MapContainer({
             <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
           </svg>`
                 : `<svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-            <path d="M4.22 11.29l6.07 6.07c1.56 1.56 4.09 1.56 5.66 0l4.07-4.07c1.56-1.56 1.56-4.09 0-5.66l-6.07-6.07c-1.56-1.56-4.09-1.56-5.66 0L4.22 5.63c-1.56 1.57-1.56 4.1 0 5.66zm7.48-4.9l4.95 4.95-2.12 2.12-4.95-4.95 2.12-2.12z"/>
+            <path d="M4.5 10.5L10.5 4.5C11.3 3.7 12.7 3.7 13.5 4.5L19.5 10.5C20.3 11.3 20.3 12.7 19.5 13.5L13.5 19.5C12.7 20.3 11.3 20.3 10.5 19.5L4.5 13.5C3.7 12.7 3.7 11.3 4.5 10.5ZM13.5 7.5L7.5 13.5"/>
           </svg>`;
 
             // 영업 상태 표시 (점)
@@ -315,6 +377,7 @@ export function MapContainer({
             background: #ef4444;
             border: 2px solid white;
             border-radius: 50%;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
           "></div>`;
 
             const markerContent = `
@@ -324,19 +387,18 @@ export function MapContainer({
           flex-direction: column;
           align-items: center;
           cursor: pointer;
+          filter: drop-shadow(0 3px 6px rgba(0,0,0,0.3));
         ">
           <div style="
             position: relative;
             z-index: 2;
             width: 36px;
             height: 36px;
-            background: ${bgColor};
+            background: ${bgStyle};
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-            border: 2px solid white;
           ">
             ${icon}
           </div>
@@ -347,8 +409,8 @@ export function MapContainer({
             height: 0;
             border-left: 8px solid transparent;
             border-right: 8px solid transparent;
-            border-top: 8px solid ${bgColor};
-            margin-top: -2px;
+            border-top: 10px solid ${arrowColor};
+            margin-top: -4px;
           "></div>
           ${statusDot}
         </div>
@@ -413,7 +475,6 @@ export function MapContainer({
 
             {/* 범례 */}
             <div className="absolute top-4 left-4 glass rounded-2xl p-4 text-xs z-10 shadow-lg">
-                <div className="font-bold text-gray-800 mb-3 text-sm">범례</div>
                 <div className="space-y-2">
                     <div className="flex items-center gap-2.5">
                         <div className="w-4 h-4 rounded-full bg-gradient-to-r from-rose-500 to-pink-500 shadow-md"></div>

@@ -20,24 +20,24 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
 
             {/* 팝업 */}
             <div
-                className="fixed z-40 glass rounded-2xl shadow-2xl max-w-sm w-80 max-h-96 overflow-hidden"
+                className="absolute z-40 glass rounded-2xl shadow-2xl max-w-sm w-80 max-h-96 overflow-hidden"
                 style={{
                     left: `${position.x}px`,
                     top: `${position.y}px`,
-                    transform: 'translate(-50%, -100%) translateY(-20px)',
+                    transform: 'translate(-50%, -100%) translateY(-60px)',
                 }}
             >
                 {/* 헤더 */}
-                <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-3 flex items-center justify-between">
+                <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                            <span className="text-white text-sm font-bold">{places.length}</span>
+                        <div className="w-6 h-6 bg-blue-50 rounded-full flex items-center justify-center border border-blue-100">
+                            <span className="text-blue-600 text-sm font-bold">{places.length}</span>
                         </div>
-                        <h3 className="text-white font-bold text-sm">이 위치의 병원/약국</h3>
+                        <h3 className="text-gray-900 font-bold text-sm">이 위치의 병원/약국</h3>
                     </div>
                     <button
                         onClick={onClose}
-                        className="text-white/80 hover:text-white transition-colors"
+                        className="text-gray-400 hover:text-gray-600 transition-colors"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
