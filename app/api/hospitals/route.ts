@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
 import { checkIsOpen, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
 
-const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
+const SERVICE_KEY = '863eb4017203c5738f818b59039fcc77d35a7849d9f9c1b7ea2bffeedc5133a4';
 const HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlMdcncLcinfoInqire';
 
 interface HospitalApiItem extends TimeFields {
