@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
+import { OpenStatus } from '@/app/types';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 
@@ -28,6 +29,7 @@ interface PlaceResponse {
     lat: number;
     lng: number;
     isOpen: boolean;
+    openStatus: OpenStatus;
     address?: string;
     phone?: string;
     distance?: number;
@@ -70,23 +72,29 @@ function formatTime(time: string | number | undefined): string {
 }
 
 /**
- * 현재 영업 중인지 확인
+ * 영업 상태 확인 (open/closed/holiday)
+ * 약국 좌표 기반 API는 오늘의 startTime/endTime만 제공
  */
-function checkIsOpen(startTime?: string | number, endTime?: string | number): boolean {
+function getPharmacyOpenStatus(startTime?: string | number, endTime?: string | number): { isOpen: boolean; openStatus: OpenStatus } {
     const startMinutes = parseTimeToMinutes(startTime);
     const endMinutes = parseTimeToMinutes(endTime);
 
-    if (startMinutes === null || endMinutes === null) return true; // 정보 없으면 영업 중으로 가정
+    // 영업시간 정보 없음 - 영업중으로 가정 (정보 없음)
+    if (startMinutes === null || endMinutes === null) {
+        return { isOpen: true, openStatus: 'open' };
+    }
 
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     // 24시간 운영 또는 익일 종료
     if (endMinutes <= startMinutes) {
-        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+        const isOpen = currentMinutes >= startMinutes || currentMinutes < endMinutes;
+        return { isOpen, openStatus: isOpen ? 'open' : 'closed' };
     }
 
-    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    const isOpen = currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    return { isOpen, openStatus: isOpen ? 'open' : 'closed' };
 }
 
 /**
@@ -138,7 +146,7 @@ function mapItemToPlace(item: PharmacyLocationApiItem): PlaceResponse | null {
     const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
     const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
 
-    const isOpen = checkIsOpen(item.startTime, item.endTime);
+    const { isOpen, openStatus } = getPharmacyOpenStatus(item.startTime, item.endTime);
     const todayHours = item.startTime && item.endTime
         ? { open: formatTime(item.startTime), close: formatTime(item.endTime) }
         : null;
@@ -150,6 +158,7 @@ function mapItemToPlace(item: PharmacyLocationApiItem): PlaceResponse | null {
         lat,
         lng,
         isOpen,
+        openStatus,
         address: item.dutyAddr,
         phone: item.dutyTel1,
         distance: item.distance ? Math.round(item.distance * 1000) : undefined,

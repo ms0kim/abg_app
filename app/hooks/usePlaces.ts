@@ -64,13 +64,50 @@ export function usePlaces() {
         setIsLoading(true);
         setError(null);
 
-        // 줌 레벨에 따라 검색 개수 조정 (줌이 높을수록 좁은 영역 = 적은 개수)
-        const numOfRows = zoom && zoom >= 16 ? 20 : zoom && zoom >= 14 ? 30 : 50;
+        // 줌 레벨에 따라 검색 개수 조정
+        const numOfRows = zoom && zoom >= 16 ? 50 : zoom && zoom >= 14 ? 100 : 200;
 
         try {
+            let sido = '';
+            let gungu = '';
+
+            // 주소 정보 가져오기 (Reverse Geocoding) - 병원 List API 사용을 위해 필요
+            if (window.naver && window.naver.maps && window.naver.maps.Service) {
+                try {
+                    const addressInfo = await new Promise<{ sido: string, gungu: string }>((resolve, reject) => {
+                        window.naver.maps.Service.reverseGeocode({
+                            coords: new window.naver.maps.LatLng(location.lat, location.lng),
+                        }, function (status, response) {
+                            if (status !== window.naver.maps.Service.Status.OK) {
+                                resolve({ sido: '', gungu: '' });
+                                return;
+                            }
+
+                            const result = response.v2;
+                            if (result.results && result.results.length > 0) {
+                                const region = result.results[0].region;
+                                resolve({
+                                    sido: region.area1.name,
+                                    gungu: region.area2.name
+                                });
+                            } else {
+                                resolve({ sido: '', gungu: '' });
+                            }
+                        });
+                    });
+
+                    sido = addressInfo.sido;
+                    gungu = addressInfo.gungu;
+                } catch (e) {
+                    console.error('Reverse Geocoding failed:', e);
+                }
+            }
+
+            console.log(`Fetching places for ${sido} ${gungu}`);
+
             // 병원과 약국을 병렬로 조회
             const [hospitalsRes, pharmaciesRes] = await Promise.all([
-                fetch(`/api/hospitals?lat=${location.lat}&lng=${location.lng}&numOfRows=${numOfRows}`),
+                fetch(`/api/hospitals?lat=${location.lat}&lng=${location.lng}&numOfRows=${numOfRows}&sido=${encodeURIComponent(sido)}&gungu=${encodeURIComponent(gungu)}`),
                 fetch(`/api/pharmacies?lat=${location.lat}&lng=${location.lng}&numOfRows=${numOfRows}`),
             ]);
 
@@ -80,7 +117,7 @@ export function usePlaces() {
             let hospitals: Place[] = hospitalsData.success ? hospitalsData.data : [];
             let pharmacies: Place[] = pharmaciesData.success ? pharmaciesData.data : [];
 
-            // bounds가 있으면 해당 영역 내 장소만 필터링
+            // bounds가 있으면 해당 영역 내 장소만 필터링 (화면 밖 제거)
             if (bounds) {
                 hospitals = hospitals.filter((p) => isWithinBounds(p, bounds));
                 pharmacies = pharmacies.filter((p) => isWithinBounds(p, bounds));

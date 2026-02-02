@@ -16,6 +16,9 @@ export type PlaceType = 'hospital' | 'pharmacy';
 // 필터 타입
 export type FilterType = 'all' | 'hospital' | 'pharmacy';
 
+// 영업 상태 타입
+export type OpenStatus = 'open' | 'closed' | 'holiday';
+
 // 영업시간 정보
 export interface BusinessHours {
     open: string;
@@ -30,6 +33,7 @@ export interface Place {
     lat: number;
     lng: number;
     isOpen: boolean;
+    openStatus: OpenStatus; // 'open' | 'closed' | 'holiday'
     address?: string;
     phone?: string;
     distance?: number;

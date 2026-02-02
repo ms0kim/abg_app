@@ -370,20 +370,7 @@ export function MapContainer({
             <path d="M4.5 10.5L10.5 4.5C11.3 3.7 12.7 3.7 13.5 4.5L19.5 10.5C20.3 11.3 20.3 12.7 19.5 13.5L13.5 19.5C12.7 20.3 11.3 20.3 10.5 19.5L4.5 13.5C3.7 12.7 3.7 11.3 4.5 10.5ZM13.5 7.5L7.5 13.5"/>
           </svg>`;
 
-            // 영업 상태 표시 (점)
-            const statusDot = place.isOpen
-                ? '' // 영업중이면 표시 안함
-                : `<div style="
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 10px;
-            height: 10px;
-            background: #ef4444;
-            border: 2px solid white;
-            border-radius: 50%;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-          "></div>`;
+            // 빨간 점 제거 - 영업 상태는 마커 색상으로만 표시
 
             const markerContent = `
         <div style="
@@ -417,7 +404,6 @@ export function MapContainer({
             border-top: 10px solid ${arrowColor};
             margin-top: -4px;
           "></div>
-          ${statusDot}
         </div>
       `;
 
@@ -491,7 +477,7 @@ export function MapContainer({
                     </div>
                     <div className="flex items-center gap-2.5">
                         <div className="w-4 h-4 rounded-full bg-gray-400 shadow-md"></div>
-                        <span className="text-gray-700 font-medium">영업종료</span>
+                        <span className="text-gray-700 font-medium">영업종료 / 휴일</span>
                     </div>
                 </div>
             </div>

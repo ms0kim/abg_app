@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
-import { checkIsOpen, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
+import { checkIsOpen, getOpenStatus, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
+import { OpenStatus } from '@/app/types';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 const HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlMdcncLcinfoInqire';
@@ -24,6 +25,7 @@ interface PlaceResponse {
     lat: number;
     lng: number;
     isOpen: boolean;
+    openStatus: OpenStatus;
     address?: string;
     phone?: string;
     distance?: number;
@@ -83,13 +85,29 @@ function mapItemToPlace(item: HospitalApiItem, currentDate: Date): PlaceResponse
 
     const category = CATEGORY_MAP[item.dutyDiv || ''] || item.dutyDivName || '병원';
 
+    const hasTime = !!(
+        item.dutyTime1s || item.dutyTime1c ||
+        item.dutyTime2s || item.dutyTime2c ||
+        item.dutyTime3s || item.dutyTime3c ||
+        item.dutyTime4s || item.dutyTime4c ||
+        item.dutyTime5s || item.dutyTime5c ||
+        item.dutyTime6s || item.dutyTime6c ||
+        item.dutyTime7s || item.dutyTime7c ||
+        item.dutyTime8s || item.dutyTime8c
+    );
+
+    // 시간 정보가 있으면 상태 체크, 없으면 영업중으로 가정 (상세 조회 시 정확한 정보 확인 가능)
+    const openStatus: OpenStatus = hasTime ? getOpenStatus(item, currentDate) : 'open';
+    const isOpen = openStatus === 'open';
+
     return {
         id: item.hpid || `hospital_${item.latitude}_${item.longitude}`,
         type: 'hospital',
         name: item.dutyName || '이름 없음',
         lat: item.latitude,
         lng: item.longitude,
-        isOpen: checkIsOpen(item, currentDate),
+        isOpen,
+        openStatus,
         address: item.dutyAddr,
         phone: item.dutyTel1,
         distance: item.distance ? Math.round(item.distance * 1000) : undefined,
@@ -124,20 +142,42 @@ export async function GET(request: NextRequest) {
 
         console.log(`API returned ${allItems.length} items. Filtered (B/C): ${filteredItems.length}`);
 
-        // 디버깅: 첫 번째 아이템의 dutyTime 필드 확인
-        if (filteredItems.length > 0) {
-            console.log('Sample item dutyTime:', {
-                name: filteredItems[0].dutyName,
-                time1s: filteredItems[0].dutyTime1s,
-                time1c: filteredItems[0].dutyTime1c
-            });
+        // 디버깅: 시간 데이터 존재 여부 확인
+        const debugTimeStats = filteredItems.map(item => ({
+            name: item.dutyName,
+            div: item.dutyDiv,
+            hasTime: !!(item.dutyTime1s || item.dutyTime2s || item.dutyTime3s || item.dutyTime4s || item.dutyTime5s),
+            Mon: `${item.dutyTime1s}~${item.dutyTime1c}`,
+            Sat: `${item.dutyTime6s}~${item.dutyTime6c}`
+        }));
+
+        // 시간 정보가 없는 아이템 수
+        const missingTimeCount = debugTimeStats.filter(s => !s.hasTime).length;
+        console.log(`Time Data Stats: Total ${debugTimeStats.length}, Missing Time: ${missingTimeCount}`);
+
+        if (debugTimeStats.length > 0) {
+            console.log('Sample Items Time Data:', JSON.stringify(debugTimeStats.slice(0, 5), null, 2));
+        }
+
+        if (debugTimeStats.length > 0) {
+            console.log('Sample Items Time Data:', JSON.stringify(debugTimeStats.slice(0, 5), null, 2));
         }
 
         const places = filteredItems
             .map((item) => mapItemToPlace(item, currentDate))
             .filter((place): place is PlaceResponse => place !== null);
 
-        // 거리순 정렬 및 중복 제거
+        // ... (sorting code)
+
+        // Debug response update
+        const responseDebug = {
+            totalFetched: allItems.length,
+            filteredCount: filteredItems.length,
+            firstItemRaw: allItems.length > 0 ? allItems[0] : null,
+            filterCriteria: "dutyDiv === 'B' || dutyDiv === 'C'",
+            timeStats: debugTimeStats.slice(0, 5) // Send first 5 stats
+        };
+
         places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
         const uniquePlaces = removeDuplicatesByCoords(places);
 
@@ -148,14 +188,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             success: true,
             count: uniquePlaces.length,
-            debug: {
-                totalFetched: allItems.length,
-                filteredCount: filteredItems.length,
-                firstItemRaw: allItems.length > 0 ? allItems[0] : null,
-                filterCriteria: "dutyDiv === 'B' || dutyDiv === 'C'"
-            },
+            debug: responseDebug,
             data: uniquePlaces,
         });
+
+
+
+
     } catch (error) {
         console.error('API Error:', error);
         return NextResponse.json(

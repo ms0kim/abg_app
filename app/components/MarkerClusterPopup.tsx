@@ -1,12 +1,27 @@
 'use client';
 
-import { Place } from '../types';
+import { Place, OpenStatus } from '../types';
 
 interface MarkerClusterPopupProps {
     places: Place[];
     onPlaceClick: (place: Place) => void;
     onClose: () => void;
     position: { x: number; y: number };
+}
+
+/**
+ * 영업 상태에 따른 텍스트
+ */
+function getStatusText(openStatus: OpenStatus): string {
+    switch (openStatus) {
+        case 'open':
+            return '영업중';
+        case 'holiday':
+            return '휴일';
+        case 'closed':
+        default:
+            return '영업종료';
+    }
 }
 
 export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: MarkerClusterPopupProps) {
@@ -54,11 +69,14 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                                 ? 'bg-rose-50'
                                 : 'bg-emerald-50'
                             : 'bg-gray-50';
-                        const textColor = place.isOpen
+                        // 휴일일 경우 특별 색상
+                        const textColor = place.openStatus === 'open'
                             ? isHospital
                                 ? 'text-rose-600'
                                 : 'text-emerald-600'
-                            : 'text-gray-600';
+                            : place.openStatus === 'holiday'
+                                ? 'text-amber-600'
+                                : 'text-gray-600';
 
                         return (
                             <button
@@ -92,7 +110,7 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                                             {place.address}
                                         </div>
                                         <div className={`text-xs font-medium mt-1 ${textColor}`}>
-                                            {place.isOpen ? '영업중' : '영업종료'}
+                                            {getStatusText(place.openStatus)}
                                             {place.todayHours && ` · ${place.todayHours.open}-${place.todayHours.close}`}
                                         </div>
                                     </div>

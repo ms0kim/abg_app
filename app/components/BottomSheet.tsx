@@ -1,10 +1,37 @@
 'use client';
 
-import { Place } from '../types';
+import { Place, OpenStatus } from '../types';
 
 interface BottomSheetProps {
     place: Place | null;
     onClose: () => void;
+}
+
+/**
+ * 영업 상태에 따른 텍스트 및 스타일
+ */
+function getStatusDisplay(openStatus: OpenStatus): { text: string; bgClass: string; textClass: string } {
+    switch (openStatus) {
+        case 'open':
+            return {
+                text: '영업중',
+                bgClass: 'bg-gradient-to-r from-emerald-500 to-teal-500',
+                textClass: 'text-white'
+            };
+        case 'holiday':
+            return {
+                text: '휴일',
+                bgClass: 'bg-amber-100',
+                textClass: 'text-amber-700'
+            };
+        case 'closed':
+        default:
+            return {
+                text: '영업종료',
+                bgClass: 'bg-gray-100',
+                textClass: 'text-gray-600'
+            };
+    }
 }
 
 export function BottomSheet({ place, onClose }: BottomSheetProps) {
@@ -23,10 +50,15 @@ export function BottomSheet({ place, onClose }: BottomSheetProps) {
     };
 
     const handleDetailClick = () => {
-        const encodedName = encodeURIComponent(place.name);
+        // 정확도를 높이기 위해 이름과 주소(앞부분)를 함께 검색
+        const query = place.address
+            ? `${place.address.split(' ').slice(0, 2).join(' ')} ${place.name}`
+            : place.name;
 
-        // 네이버 지도 검색 URL (PC/모바일 공통)
-        const searchUrl = `https://map.naver.com/p/search/${encodedName}`;
+        const encodedQuery = encodeURIComponent(query);
+
+        // 네이버 지도 검색 URL (PC/모바일 공통 - p/search)
+        const searchUrl = `https://map.naver.com/p/search/${encodedQuery}`;
 
         // 새 탭에서 열기
         window.open(searchUrl, '_blank');
@@ -56,15 +88,14 @@ export function BottomSheet({ place, onClose }: BottomSheetProps) {
                                 <h2 className="text-2xl font-bold text-gray-900">
                                     {place.name}
                                 </h2>
-                                {place.isOpen ? (
-                                    <span className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold rounded-full shadow-md">
-                                        영업중
-                                    </span>
-                                ) : (
-                                    <span className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-bold rounded-full">
-                                        영업종료
-                                    </span>
-                                )}
+                                {(() => {
+                                    const status = getStatusDisplay(place.openStatus);
+                                    return (
+                                        <span className={`px-3 py-1.5 ${status.bgClass} ${status.textClass} text-xs font-bold rounded-full shadow-md`}>
+                                            {status.text}
+                                        </span>
+                                    );
+                                })()}
                             </div>
                             {place.category && (
                                 <div className="flex items-center gap-2">
@@ -154,10 +185,16 @@ export function BottomSheet({ place, onClose }: BottomSheetProps) {
                         )}
 
                         {/* 운영시간 */}
-                        {place.todayHours && (
-                            <div className="flex gap-3 p-4 bg-gradient-to-r from-emerald-50 to-teal-50/50 rounded-xl border border-emerald-200/50">
+                        {(place.todayHours || place.openStatus === 'holiday') && (
+                            <div className={`flex gap-3 p-4 rounded-xl border ${
+                                place.openStatus === 'holiday'
+                                    ? 'bg-gradient-to-r from-amber-50 to-orange-50/50 border-amber-200/50'
+                                    : 'bg-gradient-to-r from-emerald-50 to-teal-50/50 border-emerald-200/50'
+                            }`}>
                                 <svg
-                                    className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5"
+                                    className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                                        place.openStatus === 'holiday' ? 'text-amber-500' : 'text-emerald-500'
+                                    }`}
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -171,9 +208,13 @@ export function BottomSheet({ place, onClose }: BottomSheetProps) {
                                 </svg>
                                 <div className="flex-1">
                                     <p className="text-xs font-semibold text-gray-500 mb-1">오늘 운영시간</p>
-                                    <p className="text-sm text-gray-900 font-bold">
-                                        {place.todayHours.open} - {place.todayHours.close}
-                                    </p>
+                                    {place.openStatus === 'holiday' ? (
+                                        <p className="text-sm text-amber-700 font-bold">오늘은 휴일입니다</p>
+                                    ) : place.todayHours ? (
+                                        <p className="text-sm text-gray-900 font-bold">
+                                            {place.todayHours.open} - {place.todayHours.close}
+                                        </p>
+                                    ) : null}
                                 </div>
                             </div>
                         )}

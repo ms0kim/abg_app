@@ -1,7 +1,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse } from '@/app/utils/apiUtils';
-import { checkIsOpen, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
+import { checkIsOpen, getOpenStatus, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 // 병원 기본정보 조회 (상세 정보, 영업시간 포함)
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
         const url = new URL(ONE_HOSPITAL_API_URL);
         url.searchParams.set('HPID', hpid);
 
-        const finalUrl = `${url.toString()}& ServiceKey=${SERVICE_KEY} `;
+        const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
 
         console.log(`Fetching hospital detail: hpid = ${hpid} `);
 
@@ -66,9 +66,11 @@ export async function GET(request: NextRequest) {
         const currentDate = new Date();
 
         // 필요한 정보만 추출하여 반환
+        const openStatus = getOpenStatus(item, currentDate);
         const detailInfo = {
             todayHours: getTodayBusinessHours(item, currentDate),
-            isOpen: checkIsOpen(item, currentDate),
+            isOpen: openStatus === 'open',
+            openStatus,
             // 필요한 경우 추가 상세 정보 (진료과목 등)
         };
 
