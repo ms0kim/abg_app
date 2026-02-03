@@ -12,7 +12,7 @@ const DEFAULT_LOCATION: Location = { lat: 37.5665, lng: 126.978 };
 
 // 최적화 설정
 const DEBOUNCE_MS = 300; // 지도 이동 후 API 호출 대기 시간
-const MIN_MOVE_THRESHOLD = 0.3; // bounds 30% 이상 이동 시에만 재검색
+const MIN_MOVE_THRESHOLD = 0.1; // bounds 10% 이상 이동 시에만 재검색
 
 /**
  * 두 bounds가 충분히 다른지 확인 (최적화용)
