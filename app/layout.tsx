@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from "next/script";
 import { Inter } from 'next/font/google';
 import './globals.css';
 
@@ -49,6 +50,12 @@ export default function RootLayout({
         />
         {/* iOS 상태바 스타일 */}
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <Script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9760563871632268"
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
       </head>
       <body
         className={`${inter.variable} antialiased`}
