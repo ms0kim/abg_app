@@ -99,7 +99,16 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         }
     }, [isLoaded, userLocation]);
 
-    // idle 이벤트 핸들러
+    // 초기 데이터 로드
+    useEffect(() => {
+        if (!isMapReady || !mapInstanceRef.current || !onMapIdle) return;
+
+        // 지도 준비되면 초기 데이터 로드
+        const info = extractMapInfo(mapInstanceRef.current);
+        onMapIdle(info.center, info.bounds, info.zoom);
+    }, [isMapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // idle 이벤트 핸들러 (지도 이동 시)
     useEffect(() => {
         if (!isMapReady || !mapInstanceRef.current || !onMapIdle) return;
 
@@ -108,6 +117,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         }
 
         idleListenerRef.current = window.naver.maps.Event.addListener(mapInstanceRef.current, 'idle', () => {
+            // 초기 로드는 위 useEffect에서 처리하므로 스킵
             if (isInitialMoveRef.current) {
                 isInitialMoveRef.current = false;
                 return;

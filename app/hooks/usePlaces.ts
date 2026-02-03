@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Place, Location, MapBounds, FilterType } from '../types';
 
 // 위치 요청 옵션
@@ -9,6 +9,33 @@ const GEOLOCATION_OPTIONS = {
 
 // 기본 위치 (서울 시청)
 const DEFAULT_LOCATION: Location = { lat: 37.5665, lng: 126.978 };
+
+// 최적화 설정
+const DEBOUNCE_MS = 300; // 지도 이동 후 API 호출 대기 시간
+const MIN_MOVE_THRESHOLD = 0.3; // bounds 30% 이상 이동 시에만 재검색
+
+/**
+ * 두 bounds가 충분히 다른지 확인 (최적화용)
+ */
+function shouldRefetch(prev: MapBounds | null, next: MapBounds): boolean {
+    if (!prev) return true;
+
+    // 이전 bounds의 크기 계산
+    const prevWidth = prev.ne.lng - prev.sw.lng;
+    const prevHeight = prev.ne.lat - prev.sw.lat;
+
+    // 중심점 이동 거리
+    const prevCenterLat = (prev.ne.lat + prev.sw.lat) / 2;
+    const prevCenterLng = (prev.ne.lng + prev.sw.lng) / 2;
+    const nextCenterLat = (next.ne.lat + next.sw.lat) / 2;
+    const nextCenterLng = (next.ne.lng + next.sw.lng) / 2;
+
+    const movedLat = Math.abs(nextCenterLat - prevCenterLat);
+    const movedLng = Math.abs(nextCenterLng - prevCenterLng);
+
+    // 이동 거리가 bounds의 30% 이상이면 재검색
+    return movedLat > prevHeight * MIN_MOVE_THRESHOLD || movedLng > prevWidth * MIN_MOVE_THRESHOLD;
+}
 
 export function usePlaces() {
     const [userLocation, setUserLocation] = useState<Location | null>(null);
@@ -21,6 +48,11 @@ export function usePlaces() {
     const [error, setError] = useState<string | null>(null);
     const [currentBounds, setCurrentBounds] = useState<MapBounds | null>(null);
 
+    // 최적화용 refs
+    const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
+
     // 장소가 bounds 내에 있는지 확인
     const isWithinBounds = useCallback((place: Place, bounds: MapBounds): boolean => {
         return (
@@ -32,44 +64,28 @@ export function usePlaces() {
     }, []);
 
     // 병원과 약국 데이터 가져오기
-    const fetchPlaces = useCallback(async (location: Location, bounds?: MapBounds, zoom?: number) => {
+    const fetchPlaces = useCallback(async (center: Location, bounds: MapBounds, zoom?: number) => {
+        // 이전 요청 취소
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
         setIsLoading(true);
         setError(null);
 
         // 줌 레벨에 따라 검색 개수 조정
-        const numOfRows = zoom && zoom >= 16 ? 50 : zoom && zoom >= 14 ? 100 : 200;
+        const numOfRows = zoom && zoom >= 16 ? 30 : zoom && zoom >= 14 ? 50 : 100;
 
         try {
-            // 주소 정보 가져오기 (Reverse Geocoding)
-            let sido = '';
-            let gungu = '';
-
-            if (window.naver?.maps?.Service) {
-                try {
-                    const addressInfo = await new Promise<{ sido: string; gungu: string }>((resolve) => {
-                        window.naver.maps.Service.reverseGeocode(
-                            { coords: new window.naver.maps.LatLng(location.lat, location.lng) },
-                            (status, response) => {
-                                if (status !== window.naver.maps.Service.Status.OK) {
-                                    resolve({ sido: '', gungu: '' });
-                                    return;
-                                }
-                                const region = response.v2?.results?.[0]?.region;
-                                resolve(region ? { sido: region.area1.name, gungu: region.area2.name } : { sido: '', gungu: '' });
-                            }
-                        );
-                    });
-                    sido = addressInfo.sido;
-                    gungu = addressInfo.gungu;
-                } catch {
-                    // Reverse Geocoding 실패 시 무시
-                }
-            }
-
             // 병원과 약국을 병렬로 조회
             const [hospitalsRes, pharmaciesRes] = await Promise.all([
-                fetch(`/api/hospitals?lat=${location.lat}&lng=${location.lng}&numOfRows=${numOfRows}&sido=${encodeURIComponent(sido)}&gungu=${encodeURIComponent(gungu)}`),
-                fetch(`/api/pharmacies?lat=${location.lat}&lng=${location.lng}&numOfRows=${numOfRows}`),
+                fetch(`/api/hospitals?lat=${center.lat}&lng=${center.lng}&numOfRows=${numOfRows}`, {
+                    signal: abortControllerRef.current.signal
+                }),
+                fetch(`/api/pharmacies?lat=${center.lat}&lng=${center.lng}&numOfRows=${numOfRows}`, {
+                    signal: abortControllerRef.current.signal
+                }),
             ]);
 
             const [hospitalsData, pharmaciesData] = await Promise.all([
@@ -80,14 +96,17 @@ export function usePlaces() {
             let hospitals: Place[] = hospitalsData.success ? hospitalsData.data : [];
             let pharmacies: Place[] = pharmaciesData.success ? pharmaciesData.data : [];
 
-            // bounds가 있으면 해당 영역 내 장소만 필터링
-            if (bounds) {
-                hospitals = hospitals.filter((p) => isWithinBounds(p, bounds));
-                pharmacies = pharmacies.filter((p) => isWithinBounds(p, bounds));
-            }
+            // 현재 지도 범위 내 장소만 필터링
+            hospitals = hospitals.filter((p) => isWithinBounds(p, bounds));
+            pharmacies = pharmacies.filter((p) => isWithinBounds(p, bounds));
 
             setPlaces([...hospitals, ...pharmacies]);
-        } catch {
+            lastFetchedBoundsRef.current = bounds;
+        } catch (err) {
+            // 취소된 요청은 에러로 처리하지 않음
+            if (err instanceof Error && err.name === 'AbortError') {
+                return;
+            }
             setError('데이터를 불러오는데 실패했습니다.');
         } finally {
             setIsLoading(false);
@@ -113,7 +132,7 @@ export function usePlaces() {
                     hasReceivedLocation = true;
                 }
             },
-            () => {},
+            () => { },
             GEOLOCATION_OPTIONS.fast
         );
 
@@ -135,13 +154,6 @@ export function usePlaces() {
         );
     }, []);
 
-    // 초기 데이터 로드
-    useEffect(() => {
-        if (userLocation) {
-            fetchPlaces(userLocation);
-        }
-    }, [userLocation, fetchPlaces]);
-
     // 필터 적용
     useEffect(() => {
         let result = places;
@@ -157,11 +169,25 @@ export function usePlaces() {
         setFilteredPlaces(result);
     }, [places, filter, currentBounds, isWithinBounds]);
 
-    // 지도 이동 시 실시간 검색
+    // 지도 이동 시 실시간 검색 (debounce + 최적화)
     const handleMapIdle = useCallback(
         (center: Location, bounds: MapBounds, zoom: number) => {
             setCurrentBounds(bounds);
-            fetchPlaces(center, bounds, zoom);
+
+            // 기존 타이머 취소
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+
+            // 충분히 이동하지 않았으면 기존 데이터로 필터링만
+            if (!shouldRefetch(lastFetchedBoundsRef.current, bounds)) {
+                return;
+            }
+
+            // debounce 적용
+            debounceTimerRef.current = setTimeout(() => {
+                fetchPlaces(center, bounds, zoom);
+            }, DEBOUNCE_MS);
         },
         [fetchPlaces]
     );
@@ -172,12 +198,13 @@ export function usePlaces() {
 
         setIsLoading(true);
         setError(null);
+        // 캐시 초기화
+        lastFetchedBoundsRef.current = null;
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const location = { lat: position.coords.latitude, lng: position.coords.longitude };
                 setUserLocation(location);
-                fetchPlaces(location);
             },
             (err) => {
                 const messages: Record<number, string> = {
@@ -190,7 +217,7 @@ export function usePlaces() {
             },
             GEOLOCATION_OPTIONS.accurate
         );
-    }, [fetchPlaces]);
+    }, []);
 
     // 장소 클릭 핸들러
     const handlePlaceClick = useCallback(async (place: Place) => {
@@ -215,6 +242,18 @@ export function usePlaces() {
         } else {
             setSelectedPlace(place);
         }
+    }, []);
+
+    // 컴포넌트 언마운트 시 정리
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
     }, []);
 
     return {

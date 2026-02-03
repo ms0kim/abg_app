@@ -1,22 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
-import { getOpenStatus, getTodayBusinessHours, getTodayTimeRaw, TimeFields } from '@/app/utils/businessHours';
 import { OpenStatus, BusinessTimeRaw } from '@/app/types';
 import { hospitalListCache, MemoryCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
-const HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlMdcncLcinfoInqire';
 
-interface HospitalApiItem extends TimeFields {
+// 좌표 기반 병원 검색 API (시간 정보 포함)
+const HOSPITAL_LOCATION_API = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlMdcncLcinfoInqire';
+
+// API 응답 타입
+interface HospitalApiItem {
     dutyName?: string;
     dutyAddr?: string;
     dutyTel1?: string;
-    latitude?: number;
-    longitude?: number;
+    latitude?: number | string;
+    longitude?: number | string;
     distance?: number;
+    hpid?: string;
     dutyDiv?: string;
     dutyDivName?: string;
-    hpid?: string;
+    // 오늘의 영업시간 (위치 API에서 제공)
+    startTime?: string | number;
+    endTime?: string | number;
 }
 
 interface PlaceResponse {
@@ -43,7 +48,78 @@ const CATEGORY_MAP: Record<string, string> = {
     I: '기타',
 };
 
-async function fetchHospitalsLocation(
+/**
+ * 시간을 분 단위로 파싱
+ */
+function parseTimeToMinutes(time: string | number | undefined): number | null {
+    if (time === undefined || time === null) return null;
+
+    const str = String(time).padStart(4, '0');
+    const hours = parseInt(str.substring(0, 2), 10);
+    const minutes = parseInt(str.substring(2, 4), 10);
+
+    if (isNaN(hours) || isNaN(minutes)) return null;
+
+    return hours * 60 + minutes;
+}
+
+/**
+ * 시간을 읽기 좋은 형식으로 변환
+ */
+function formatTime(time: string | number | undefined): string {
+    if (time === undefined || time === null) return '-';
+
+    const str = String(time).padStart(4, '0');
+    const hours = parseInt(str.substring(0, 2), 10);
+    const minutes = parseInt(str.substring(2, 4), 10);
+
+    if (isNaN(hours) || isNaN(minutes)) return '-';
+
+    const period = hours >= 12 ? '오후' : '오전';
+    const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+    const displayMinutes = minutes.toString().padStart(2, '0');
+
+    return `${period} ${displayHours}:${displayMinutes}`;
+}
+
+/**
+ * 영업 상태 및 원본 데이터 반환
+ */
+function getStatusAndTimeRaw(startTime?: string | number, endTime?: string | number): {
+    isOpen: boolean;
+    openStatus: OpenStatus;
+    todayTimeRaw: BusinessTimeRaw;
+} {
+    const openMinutes = parseTimeToMinutes(startTime);
+    const closeMinutes = parseTimeToMinutes(endTime);
+
+    // 영업시간 정보 없음 - 영업중으로 가정
+    if (openMinutes === null || closeMinutes === null) {
+        return {
+            isOpen: true,
+            openStatus: 'open',
+            todayTimeRaw: { openMinutes: null, closeMinutes: null, isHoliday: false }
+        };
+    }
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayTimeRaw: BusinessTimeRaw = { openMinutes, closeMinutes, isHoliday: false };
+
+    // 24시간 운영 또는 익일 종료
+    if (closeMinutes <= openMinutes) {
+        const isOpen = currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+        return { isOpen, openStatus: isOpen ? 'open' : 'closed', todayTimeRaw };
+    }
+
+    const isOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+    return { isOpen, openStatus: isOpen ? 'open' : 'closed', todayTimeRaw };
+}
+
+/**
+ * 좌표 기반 병원 검색
+ */
+async function fetchHospitalsByLocation(
     lat: number,
     lng: number,
     numOfRows: number
@@ -53,8 +129,7 @@ async function fetchHospitalsLocation(
         return [];
     }
 
-    const url = new URL(HOSPITAL_API_URL);
-    // ServiceKey는 인코딩된 상태로 오므로 searchParams.set 대신 직접 문자열로 연결
+    const url = new URL(HOSPITAL_LOCATION_API);
     url.searchParams.set('WGS84_LAT', String(lat));
     url.searchParams.set('WGS84_LON', String(lng));
     url.searchParams.set('numOfRows', String(numOfRows));
@@ -62,62 +137,54 @@ async function fetchHospitalsLocation(
 
     const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
 
-    console.log(`Fetching hospitals via Location API: lat=${lat}, lng=${lng}`);
+    console.log(`Fetching hospitals by location: lat=${lat}, lng=${lng}`);
 
     try {
         const response = await fetchWithRetry(finalUrl);
 
         if (!response.ok) {
-            console.error(`Hospital Location API 응답 에러:`, response.status);
+            console.error('병원 API 응답 에러:', response.status);
             return [];
         }
 
         const xmlText = await response.text();
         return parseXmlResponse<HospitalApiItem>(xmlText);
     } catch (error) {
-        console.error(`Hospital Location API 호출 실패:`, error);
+        console.error('병원 API 호출 실패:', error);
         return [];
     }
 }
 
-function mapItemToPlace(item: HospitalApiItem, currentDate: Date): PlaceResponse | null {
+function mapItemToPlace(item: HospitalApiItem): PlaceResponse | null {
     if (!item.latitude || !item.longitude) {
         return null;
     }
 
+    // 숫자로 변환
+    const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
+    const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
+
     const category = CATEGORY_MAP[item.dutyDiv || ''] || item.dutyDivName || '병원';
 
-    const hasTime = !!(
-        item.dutyTime1s || item.dutyTime1c ||
-        item.dutyTime2s || item.dutyTime2c ||
-        item.dutyTime3s || item.dutyTime3c ||
-        item.dutyTime4s || item.dutyTime4c ||
-        item.dutyTime5s || item.dutyTime5c ||
-        item.dutyTime6s || item.dutyTime6c ||
-        item.dutyTime7s || item.dutyTime7c ||
-        item.dutyTime8s || item.dutyTime8c
-    );
-
-    // 실시간 계산용 원본 데이터
-    const todayTimeRaw = hasTime ? getTodayTimeRaw(item, currentDate) : undefined;
-
-    // 시간 정보가 있으면 상태 체크, 없으면 영업중으로 가정 (상세 조회 시 정확한 정보 확인 가능)
-    const openStatus: OpenStatus = hasTime ? getOpenStatus(item, currentDate) : 'open';
-    const isOpen = openStatus === 'open';
+    // 영업 상태 계산 (startTime, endTime 사용)
+    const { isOpen, openStatus, todayTimeRaw } = getStatusAndTimeRaw(item.startTime, item.endTime);
+    const todayHours = item.startTime && item.endTime
+        ? { open: formatTime(item.startTime), close: formatTime(item.endTime) }
+        : null;
 
     return {
-        id: item.hpid || `hospital_${item.latitude}_${item.longitude}`,
+        id: item.hpid || `hospital_${lat}_${lng}`,
         type: 'hospital',
         name: item.dutyName || '이름 없음',
-        lat: item.latitude,
-        lng: item.longitude,
+        lat,
+        lng,
         isOpen,
         openStatus,
         address: item.dutyAddr,
         phone: item.dutyTel1,
         distance: item.distance ? Math.round(item.distance * 1000) : undefined,
         category,
-        todayHours: getTodayBusinessHours(item, currentDate),
+        todayHours,
         todayTimeRaw,
     };
 }
@@ -127,7 +194,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const lat = parseFloat(searchParams.get('lat') || '');
         const lng = parseFloat(searchParams.get('lng') || '');
-        const numOfRows = parseInt(searchParams.get('numOfRows') || '100', 10); // 한 번에 많이 가져와서 필터링
+        const numOfRows = parseInt(searchParams.get('numOfRows') || '100', 10);
 
         if (isNaN(lat) || isNaN(lng)) {
             return NextResponse.json(
@@ -152,58 +219,23 @@ export async function GET(request: NextRequest) {
 
         console.log(`[CACHE MISS] Fetching nearby hospitals: lat=${lat}, lng=${lng}`);
 
-        const currentDate = new Date();
-
-        // 위치 기반 통합 조회 (QD 파라미터 제외하여 전체 로드)
-        const allItems = await fetchHospitalsLocation(lat, lng, numOfRows);
+        const hospitals = await fetchHospitalsByLocation(lat, lng, numOfRows);
 
         // B(병원), C(의원) 만 필터링
-        const filteredItems = allItems.filter(item => item.dutyDiv === 'B' || item.dutyDiv === 'C');
+        const filteredHospitals = hospitals.filter(item => item.dutyDiv === 'B' || item.dutyDiv === 'C');
 
-        console.log(`API returned ${allItems.length} items. Filtered (B/C): ${filteredItems.length}`);
+        console.log(`API returned ${hospitals.length} items. Filtered (B/C): ${filteredHospitals.length}`);
 
-        // 디버깅: 시간 데이터 존재 여부 확인
-        const debugTimeStats = filteredItems.map(item => ({
-            name: item.dutyName,
-            div: item.dutyDiv,
-            hasTime: !!(item.dutyTime1s || item.dutyTime2s || item.dutyTime3s || item.dutyTime4s || item.dutyTime5s),
-            Mon: `${item.dutyTime1s}~${item.dutyTime1c}`,
-            Sat: `${item.dutyTime6s}~${item.dutyTime6c}`
-        }));
-
-        // 시간 정보가 없는 아이템 수
-        const missingTimeCount = debugTimeStats.filter(s => !s.hasTime).length;
-        console.log(`Time Data Stats: Total ${debugTimeStats.length}, Missing Time: ${missingTimeCount}`);
-
-        if (debugTimeStats.length > 0) {
-            console.log('Sample Items Time Data:', JSON.stringify(debugTimeStats.slice(0, 5), null, 2));
-        }
-
-        if (debugTimeStats.length > 0) {
-            console.log('Sample Items Time Data:', JSON.stringify(debugTimeStats.slice(0, 5), null, 2));
-        }
-
-        const places = filteredItems
-            .map((item) => mapItemToPlace(item, currentDate))
+        const places = filteredHospitals
+            .map((item) => mapItemToPlace(item))
             .filter((place): place is PlaceResponse => place !== null);
 
-        // ... (sorting code)
-
-        // Debug response update
-        const responseDebug = {
-            totalFetched: allItems.length,
-            filteredCount: filteredItems.length,
-            firstItemRaw: allItems.length > 0 ? allItems[0] : null,
-            filterCriteria: "dutyDiv === 'B' || dutyDiv === 'C'",
-            timeStats: debugTimeStats.slice(0, 5) // Send first 5 stats
-        };
-
+        // 거리순 정렬 및 중복 제거
         places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
         const uniquePlaces = removeDuplicatesByCoords(places);
 
         const openCount = uniquePlaces.filter(p => p.isOpen).length;
-        const closedCount = uniquePlaces.length - openCount;
-        console.log(`Found ${uniquePlaces.length} hospitals/clinics (Open: ${openCount}, Closed: ${closedCount})`);
+        console.log(`Found ${uniquePlaces.length} hospitals (Open: ${openCount}, Closed: ${uniquePlaces.length - openCount})`);
 
         // 캐시에 저장
         hospitalListCache.set(cacheKey, uniquePlaces);
@@ -214,10 +246,6 @@ export async function GET(request: NextRequest) {
             cached: false,
             data: uniquePlaces,
         });
-
-
-
-
     } catch (error) {
         console.error('API Error:', error);
         return NextResponse.json(
