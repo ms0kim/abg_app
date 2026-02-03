@@ -78,7 +78,13 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 지도 초기화
     useEffect(() => {
-        if (!isLoaded || !mapRef.current || mapInstanceRef.current || !window.naver?.maps) return;
+        if (!isLoaded || !mapRef.current || !window.naver?.maps) return;
+
+        // 이미 지도 인스턴스가 있으면 ready 상태만 설정 (Strict Mode 대응)
+        if (mapInstanceRef.current) {
+            setIsMapReady(true);
+            return;
+        }
 
         const center = userLocation || DEFAULT_LOCATION;
 
@@ -203,57 +209,65 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 단일 마커 생성
     const createPlaceMarker = useCallback((place: Place): naver.maps.Marker | null => {
-        if (!mapInstanceRef.current) return null;
+        if (!mapInstanceRef.current || !window.naver?.maps?.Marker) return null;
 
-        const marker = new window.naver.maps.Marker({
-            position: new window.naver.maps.LatLng(place.lat, place.lng),
-            map: mapInstanceRef.current,
-            icon: { content: createMarkerContent(place), anchor: new window.naver.maps.Point(18, 44) },
-        });
+        try {
+            const marker = new window.naver.maps.Marker({
+                position: new window.naver.maps.LatLng(place.lat, place.lng),
+                map: mapInstanceRef.current,
+                icon: { content: createMarkerContent(place), anchor: new window.naver.maps.Point(18, 44) },
+            });
 
-        window.naver.maps.Event.addListener(marker, 'click', () => onPlaceClick(place));
-        return marker;
+            window.naver.maps.Event.addListener(marker, 'click', () => onPlaceClick(place));
+            return marker;
+        } catch {
+            return null;
+        }
     }, [createMarkerContent, onPlaceClick]);
 
     // 클러스터 마커 생성
     const createClusterMarker = useCallback((clusterPlaces: Place[]): naver.maps.Marker | null => {
-        if (!mapInstanceRef.current || clusterPlaces.length === 0) return null;
+        if (!mapInstanceRef.current || !window.naver?.maps?.Marker || clusterPlaces.length === 0) return null;
         if (clusterPlaces.length === 1) return createPlaceMarker(clusterPlaces[0]);
 
-        const first = clusterPlaces[0];
-        const content = `
-            <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer">
-                <div style="position:relative;z-index:2;width:36px;height:36px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(59,130,246,0.4);border:2px solid #3b82f6">
-                    <span style="color:#2563eb;font-size:15px;font-weight:bold;font-family:-apple-system,sans-serif">${clusterPlaces.length}</span>
+        try {
+            const first = clusterPlaces[0];
+            const content = `
+                <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer">
+                    <div style="position:relative;z-index:2;width:36px;height:36px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(59,130,246,0.4);border:2px solid #3b82f6">
+                        <span style="color:#2563eb;font-size:15px;font-weight:bold;font-family:-apple-system,sans-serif">${clusterPlaces.length}</span>
+                    </div>
+                    <div style="position:relative;z-index:1;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:8px solid #3b82f6;margin-top:-2px"></div>
                 </div>
-                <div style="position:relative;z-index:1;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:8px solid #3b82f6;margin-top:-2px"></div>
-            </div>
-        `;
+            `;
 
-        const marker = new window.naver.maps.Marker({
-            position: new window.naver.maps.LatLng(first.lat, first.lng),
-            map: mapInstanceRef.current,
-            icon: { content, anchor: new window.naver.maps.Point(22, 54) },
-            zIndex: 100,
-        });
+            const marker = new window.naver.maps.Marker({
+                position: new window.naver.maps.LatLng(first.lat, first.lng),
+                map: mapInstanceRef.current,
+                icon: { content, anchor: new window.naver.maps.Point(22, 54) },
+                zIndex: 100,
+            });
 
-        window.naver.maps.Event.addListener(marker, 'click', () => {
-            const map = mapInstanceRef.current!;
-            const projection = map.getProjection();
-            const offset = projection.fromCoordToOffset(marker.getPosition());
-            const bounds = map.getBounds() as naver.maps.LatLngBounds;
-            const topLeft = projection.fromCoordToOffset(
-                new window.naver.maps.LatLng(bounds.getNE().lat(), bounds.getSW().lng())
-            );
-            setSelectedCluster({ places: clusterPlaces, position: { x: offset.x - topLeft.x, y: offset.y - topLeft.y } });
-        });
+            window.naver.maps.Event.addListener(marker, 'click', () => {
+                const map = mapInstanceRef.current!;
+                const projection = map.getProjection();
+                const offset = projection.fromCoordToOffset(marker.getPosition());
+                const bounds = map.getBounds() as naver.maps.LatLngBounds;
+                const topLeft = projection.fromCoordToOffset(
+                    new window.naver.maps.LatLng(bounds.getNE().lat(), bounds.getSW().lng())
+                );
+                setSelectedCluster({ places: clusterPlaces, position: { x: offset.x - topLeft.x, y: offset.y - topLeft.y } });
+            });
 
-        return marker;
+            return marker;
+        } catch {
+            return null;
+        }
     }, [createPlaceMarker]);
 
     // 마커 업데이트
     useEffect(() => {
-        if (!isMapReady) return;
+        if (!isMapReady || !mapInstanceRef.current || !window.naver?.maps?.Marker) return;
 
         markersRef.current.forEach((m) => m.setMap(null));
         markersRef.current = clusterPlaces(places)

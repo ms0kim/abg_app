@@ -1,11 +1,11 @@
 {
-  "name": "동네건강지도",
-  "short_name": "건강지도",
-  "description": "내 주변 병원과 약국을 쉽게 찾아보세요",
+  "name": "아프면 바로가",
+  "short_name": "아프면 바로가",
+  "description": "지금 바로 갈 수 있는 병원과 약국이에요",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#667eea",
-  "theme_color": "#667eea",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "orientation": "portrait",
   "scope": "/",
   "icons": [
@@ -16,15 +16,15 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/icon.svg",
       "sizes": "192x192",
-      "type": "image/png",
+      "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/icon.svg",
       "sizes": "512x512",
-      "type": "image/png",
+      "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ]
