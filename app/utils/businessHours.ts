@@ -2,7 +2,7 @@
  * 영업시간 관련 공통 유틸리티
  */
 
-import { OpenStatus } from '../types';
+import { OpenStatus, BusinessTimeRaw } from '../types';
 
 // 시간 정보를 담고 있는 아이템 타입
 export interface TimeFields {
@@ -195,4 +195,30 @@ export function getTodayBusinessHours(
         open: formatTime(startTimeStr),
         close: formatTime(endTimeStr),
     };
+}
+
+/**
+ * 오늘의 영업시간 원본 데이터 가져오기 (클라이언트 실시간 계산용)
+ */
+export function getTodayTimeRaw(
+    item: TimeFields,
+    currentDate: Date = new Date()
+): BusinessTimeRaw {
+    const dayOfWeek = currentDate.getDay();
+    const { start: startTimeStr, end: endTimeStr } = getDayTimes(item, dayOfWeek);
+
+    // 해당 요일에 영업시간 정보가 없는 경우
+    if (!startTimeStr || !endTimeStr) {
+        // 다른 요일에 시간 정보가 있다면 오늘은 휴일
+        if (hasAnyTimeInfo(item)) {
+            return { openMinutes: null, closeMinutes: null, isHoliday: true };
+        }
+        // 아예 시간 정보가 없으면 정보 없음
+        return { openMinutes: null, closeMinutes: null, isHoliday: false };
+    }
+
+    const openMinutes = timeToMinutes(startTimeStr);
+    const closeMinutes = timeToMinutes(endTimeStr);
+
+    return { openMinutes, closeMinutes, isHoliday: false };
 }

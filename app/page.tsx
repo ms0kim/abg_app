@@ -17,6 +17,7 @@ export default function HomePage() {
         filter,
         setFilter,
         isLoading,
+        isDetailLoading,
         error,
         handleMapIdle,
         handleRefreshLocation,
@@ -46,7 +47,11 @@ export default function HomePage() {
                 </div>
 
                 {/* 바텀시트 */}
-                <BottomSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />
+                <BottomSheet
+                    place={selectedPlace}
+                    onClose={() => setSelectedPlace(null)}
+                    isLoading={isDetailLoading}
+                />
 
                 {/* PWA 설치 프롬프트 */}
                 <InstallPrompt />

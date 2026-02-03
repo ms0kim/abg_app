@@ -1,7 +1,7 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse } from '@/app/utils/apiUtils';
-import { checkIsOpen, getOpenStatus, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
+import { getOpenStatus, getTodayBusinessHours, getTodayTimeRaw, TimeFields } from '@/app/utils/businessHours';
+import { hospitalDetailCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 // 병원 기본정보 조회 (상세 정보, 영업시간 포함)
@@ -35,12 +35,23 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // 캐시 확인 (5분 TTL)
+        const cachedData = hospitalDetailCache.get(hpid);
+        if (cachedData) {
+            console.log(`[CACHE HIT] Hospital detail: hpid = ${hpid}`);
+            return NextResponse.json({
+                success: true,
+                cached: true,
+                data: cachedData,
+            });
+        }
+
         const url = new URL(ONE_HOSPITAL_API_URL);
         url.searchParams.set('HPID', hpid);
 
         const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
 
-        console.log(`Fetching hospital detail: hpid = ${hpid} `);
+        console.log(`[CACHE MISS] Fetching hospital detail: hpid = ${hpid}`);
 
         const response = await fetchWithRetry(finalUrl);
 
@@ -67,15 +78,21 @@ export async function GET(request: NextRequest) {
 
         // 필요한 정보만 추출하여 반환
         const openStatus = getOpenStatus(item, currentDate);
+        const todayTimeRaw = getTodayTimeRaw(item, currentDate);
         const detailInfo = {
             todayHours: getTodayBusinessHours(item, currentDate),
             isOpen: openStatus === 'open',
             openStatus,
+            todayTimeRaw,
             // 필요한 경우 추가 상세 정보 (진료과목 등)
         };
 
+        // 캐시에 저장
+        hospitalDetailCache.set(hpid, detailInfo);
+
         return NextResponse.json({
             success: true,
+            cached: false,
             data: detailInfo,
         });
 

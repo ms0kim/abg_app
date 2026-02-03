@@ -1,6 +1,7 @@
 'use client';
 
 import { Place, OpenStatus } from '../types';
+import { calculateOpenStatus } from '../utils/realtimeStatus';
 
 interface MarkerClusterPopupProps {
     places: Place[];
@@ -22,6 +23,16 @@ function getStatusText(openStatus: OpenStatus): string {
         default:
             return '영업종료';
     }
+}
+
+/**
+ * 실시간 영업 상태 계산
+ */
+function getRealtimeStatus(place: Place): { isOpen: boolean; openStatus: OpenStatus } {
+    if (place.todayTimeRaw) {
+        return calculateOpenStatus(place.todayTimeRaw);
+    }
+    return { isOpen: place.isOpen, openStatus: place.openStatus };
 }
 
 export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: MarkerClusterPopupProps) {
@@ -64,19 +75,35 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                 <div className="overflow-y-auto max-h-80 divide-y divide-gray-100">
                     {places.map((place, index) => {
                         const isHospital = place.type === 'hospital';
-                        const bgColor = place.isOpen
-                            ? isHospital
-                                ? 'bg-rose-50'
-                                : 'bg-emerald-50'
-                            : 'bg-gray-50';
-                        // 휴일일 경우 특별 색상
-                        const textColor = place.openStatus === 'open'
-                            ? isHospital
-                                ? 'text-rose-600'
-                                : 'text-emerald-600'
-                            : place.openStatus === 'holiday'
-                                ? 'text-amber-600'
-                                : 'text-gray-600';
+                        const isTestMarker = place.id.startsWith('test_');
+                        // 실시간 영업 상태 계산
+                        const { isOpen, openStatus } = getRealtimeStatus(place);
+
+                        // 테스트 마커는 노란색 배경
+                        const bgColor = isTestMarker
+                            ? 'bg-amber-50'
+                            : isOpen
+                                ? isHospital
+                                    ? 'bg-rose-50'
+                                    : 'bg-emerald-50'
+                                : 'bg-gray-50';
+                        // 테스트 마커는 노란색 텍스트, 휴일일 경우 특별 색상
+                        const textColor = isTestMarker
+                            ? 'text-amber-600'
+                            : openStatus === 'open'
+                                ? isHospital
+                                    ? 'text-rose-600'
+                                    : 'text-emerald-600'
+                                : openStatus === 'holiday'
+                                    ? 'text-amber-600'
+                                    : 'text-gray-600';
+
+                        // 아이콘 배경색 결정
+                        const iconBgColor = isTestMarker
+                            ? 'bg-amber-500'
+                            : isOpen
+                                ? (isHospital ? 'bg-rose-500' : 'bg-emerald-500')
+                                : 'bg-gray-400';
 
                         return (
                             <button
@@ -89,7 +116,7 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                             >
                                 <div className="flex items-start gap-3">
                                     {/* 아이콘 */}
-                                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${place.isOpen ? (isHospital ? 'bg-rose-500' : 'bg-emerald-500') : 'bg-gray-400'}`}>
+                                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${iconBgColor}`}>
                                         {isHospital ? (
                                             <svg className="w-4 h-4" fill="white" viewBox="0 0 24 24">
                                                 <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
@@ -110,7 +137,7 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                                             {place.address}
                                         </div>
                                         <div className={`text-xs font-medium mt-1 ${textColor}`}>
-                                            {getStatusText(place.openStatus)}
+                                            {getStatusText(openStatus)}
                                             {place.todayHours && ` · ${place.todayHours.open}-${place.todayHours.close}`}
                                         </div>
                                     </div>

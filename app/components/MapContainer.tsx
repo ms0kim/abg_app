@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNaverMap } from '../providers/NaverMapProvider';
 import { Place, Location, MapBounds } from '../types';
 import { MarkerClusterPopup } from './MarkerClusterPopup';
+import { calculateOpenStatus } from '../utils/realtimeStatus';
 
 interface MapContainerProps {
     userLocation: Location | null;
@@ -34,6 +35,47 @@ export function MapContainer({
     const [isMapReady, setIsMapReady] = useState(false);
     const isInitialMoveRef = useRef(true);
     const [selectedCluster, setSelectedCluster] = useState<{ places: Place[]; position: { x: number; y: number } } | null>(null);
+
+    // 내 위치에서 다시 찾기 버튼 클릭 핸들러
+    const handleRefreshClick = useCallback(() => {
+        if (!mapInstanceRef.current) {
+            onRefreshLocation();
+            return;
+        }
+
+        if ('geolocation' in navigator) {
+            console.log('📍 지도 위치 새로고침 시작...');
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const location = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                    };
+                    console.log(`📍 지도 이동 위치: ${location.lat}, ${location.lng} (정확도: ${position.coords.accuracy}m)`);
+
+                    // 지도 이동
+                    mapInstanceRef.current?.setCenter(
+                        new window.naver.maps.LatLng(location.lat, location.lng)
+                    );
+                    // 데이터 새로고침
+                    onRefreshLocation();
+                },
+                (error) => {
+                    console.error('위치 정보를 가져올 수 없습니다:', error);
+                    // 위치를 못 가져와도 데이터 새로고침은 시도
+                    onRefreshLocation();
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 15000, // 15초로 증가
+                    maximumAge: 0, // 캐시 사용 안함
+                }
+            );
+        } else {
+            onRefreshLocation();
+        }
+    }, [onRefreshLocation]);
 
     // 지도 초기화 - isLoaded만 의존성으로
     useEffect(() => {
@@ -343,13 +385,24 @@ export function MapContainer({
             if (!mapInstanceRef.current) return null;
 
             const isHospital = place.type === 'hospital';
+            const isTestMarker = place.id.startsWith('test_');
 
+            // 실시간으로 영업 상태 계산 (todayTimeRaw가 있으면 사용, 없으면 서버에서 받은 isOpen 사용)
+            const { isOpen } = place.todayTimeRaw
+                ? calculateOpenStatus(place.todayTimeRaw)
+                : { isOpen: place.isOpen };
+
+            // 테스트 마커: Yellow/Amber
             // 병원: Rose-Pink Gradient
             // 약국: Emerald-Teal Gradient
             let bgStyle: string;
             let arrowColor: string;
 
-            if (place.isOpen) {
+            if (isTestMarker) {
+                // 테스트 마커는 노란색으로 표시
+                bgStyle = 'linear-gradient(to right, #f59e0b, #fbbf24)'; // amber-500 to amber-400
+                arrowColor = '#f59e0b'; // amber-500
+            } else if (isOpen) {
                 if (isHospital) {
                     bgStyle = 'linear-gradient(to right, #f43f5e, #ec4899)'; // rose-500 to pink-500
                     arrowColor = '#f43f5e'; // rose-500
@@ -479,12 +532,16 @@ export function MapContainer({
                         <div className="w-4 h-4 rounded-full bg-gray-400 shadow-md"></div>
                         <span className="text-gray-700 font-medium">영업종료 / 휴일</span>
                     </div>
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-4 h-4 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 shadow-md"></div>
+                        <span className="text-gray-700 font-medium">테스트 마커</span>
+                    </div>
                 </div>
             </div>
 
             {/* 내 위치에서 다시 찾기 버튼 */}
             <button
-                onClick={onRefreshLocation}
+                onClick={handleRefreshClick}
                 className="absolute bottom-24 left-1/2 -translate-x-1/2 glass px-6 py-3.5 rounded-full shadow-xl border-2 border-white/50 flex items-center gap-2.5 hover:scale-105 active:scale-95 transition-all duration-300 z-10 group"
             >
                 <svg

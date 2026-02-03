@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
-import { checkIsOpen, getOpenStatus, getTodayBusinessHours, TimeFields } from '@/app/utils/businessHours';
-import { OpenStatus } from '@/app/types';
+import { getOpenStatus, getTodayBusinessHours, getTodayTimeRaw, TimeFields } from '@/app/utils/businessHours';
+import { OpenStatus, BusinessTimeRaw } from '@/app/types';
+import { hospitalListCache, MemoryCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 const HOSPITAL_API_URL = 'http://apis.data.go.kr/B552657/HsptlAsembySearchService/getHsptlMdcncLcinfoInqire';
@@ -31,6 +32,7 @@ interface PlaceResponse {
     distance?: number;
     category?: string;
     todayHours?: { open: string; close: string } | null;
+    todayTimeRaw?: BusinessTimeRaw;
 }
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -96,6 +98,9 @@ function mapItemToPlace(item: HospitalApiItem, currentDate: Date): PlaceResponse
         item.dutyTime8s || item.dutyTime8c
     );
 
+    // 실시간 계산용 원본 데이터
+    const todayTimeRaw = hasTime ? getTodayTimeRaw(item, currentDate) : undefined;
+
     // 시간 정보가 있으면 상태 체크, 없으면 영업중으로 가정 (상세 조회 시 정확한 정보 확인 가능)
     const openStatus: OpenStatus = hasTime ? getOpenStatus(item, currentDate) : 'open';
     const isOpen = openStatus === 'open';
@@ -113,6 +118,7 @@ function mapItemToPlace(item: HospitalApiItem, currentDate: Date): PlaceResponse
         distance: item.distance ? Math.round(item.distance * 1000) : undefined,
         category,
         todayHours: getTodayBusinessHours(item, currentDate),
+        todayTimeRaw,
     };
 }
 
@@ -130,7 +136,21 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        console.log(`Fetching nearby hospitals: lat=${lat}, lng=${lng}`);
+        // 캐시 키 생성 (소수점 3자리 = 약 100m 범위)
+        const cacheKey = MemoryCache.createLocationKey(lat, lng, 3);
+        const cachedData = hospitalListCache.get(cacheKey) as PlaceResponse[] | null;
+
+        if (cachedData) {
+            console.log(`[CACHE HIT] Hospitals at ${cacheKey}, ${cachedData.length} items`);
+            return NextResponse.json({
+                success: true,
+                count: cachedData.length,
+                cached: true,
+                data: cachedData,
+            });
+        }
+
+        console.log(`[CACHE MISS] Fetching nearby hospitals: lat=${lat}, lng=${lng}`);
 
         const currentDate = new Date();
 
@@ -185,10 +205,13 @@ export async function GET(request: NextRequest) {
         const closedCount = uniquePlaces.length - openCount;
         console.log(`Found ${uniquePlaces.length} hospitals/clinics (Open: ${openCount}, Closed: ${closedCount})`);
 
+        // 캐시에 저장
+        hospitalListCache.set(cacheKey, uniquePlaces);
+
         return NextResponse.json({
             success: true,
             count: uniquePlaces.length,
-            debug: responseDebug,
+            cached: false,
             data: uniquePlaces,
         });
 

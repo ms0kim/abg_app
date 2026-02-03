@@ -5,6 +5,7 @@ import { Place, OpenStatus } from '../types';
 interface BottomSheetProps {
     place: Place | null;
     onClose: () => void;
+    isLoading?: boolean;
 }
 
 /**
@@ -34,7 +35,7 @@ function getStatusDisplay(openStatus: OpenStatus): { text: string; bgClass: stri
     }
 }
 
-export function BottomSheet({ place, onClose }: BottomSheetProps) {
+export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetProps) {
     if (!place) return null;
 
     const handleBackdropClick = (e: React.MouseEvent) => {
@@ -185,7 +186,7 @@ export function BottomSheet({ place, onClose }: BottomSheetProps) {
                         )}
 
                         {/* 운영시간 */}
-                        {(place.todayHours || place.openStatus === 'holiday') && (
+                        {(place.todayHours || place.openStatus === 'holiday' || isLoading) && (
                             <div className={`flex gap-3 p-4 rounded-xl border ${
                                 place.openStatus === 'holiday'
                                     ? 'bg-gradient-to-r from-amber-50 to-orange-50/50 border-amber-200/50'
@@ -208,13 +209,20 @@ export function BottomSheet({ place, onClose }: BottomSheetProps) {
                                 </svg>
                                 <div className="flex-1">
                                     <p className="text-xs font-semibold text-gray-500 mb-1">오늘 운영시간</p>
-                                    {place.openStatus === 'holiday' ? (
+                                    {isLoading && !place.todayHours ? (
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                                            <p className="text-sm text-gray-500">불러오는 중...</p>
+                                        </div>
+                                    ) : place.openStatus === 'holiday' ? (
                                         <p className="text-sm text-amber-700 font-bold">오늘은 휴일입니다</p>
                                     ) : place.todayHours ? (
                                         <p className="text-sm text-gray-900 font-bold">
                                             {place.todayHours.open} - {place.todayHours.close}
                                         </p>
-                                    ) : null}
+                                    ) : (
+                                        <p className="text-sm text-gray-500">정보 없음</p>
+                                    )}
                                 </div>
                             </div>
                         )}

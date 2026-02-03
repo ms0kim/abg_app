@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
-import { OpenStatus } from '@/app/types';
+import { OpenStatus, BusinessTimeRaw } from '@/app/types';
+import { pharmacyListCache, MemoryCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 
@@ -35,6 +36,7 @@ interface PlaceResponse {
     distance?: number;
     category?: string;
     todayHours?: { open: string; close: string } | null;
+    todayTimeRaw?: BusinessTimeRaw;
 }
 
 /**
@@ -72,29 +74,38 @@ function formatTime(time: string | number | undefined): string {
 }
 
 /**
- * 영업 상태 확인 (open/closed/holiday)
+ * 영업 상태 및 원본 데이터 반환
  * 약국 좌표 기반 API는 오늘의 startTime/endTime만 제공
  */
-function getPharmacyOpenStatus(startTime?: string | number, endTime?: string | number): { isOpen: boolean; openStatus: OpenStatus } {
-    const startMinutes = parseTimeToMinutes(startTime);
-    const endMinutes = parseTimeToMinutes(endTime);
+function getPharmacyStatusAndTimeRaw(startTime?: string | number, endTime?: string | number): {
+    isOpen: boolean;
+    openStatus: OpenStatus;
+    todayTimeRaw: BusinessTimeRaw;
+} {
+    const openMinutes = parseTimeToMinutes(startTime);
+    const closeMinutes = parseTimeToMinutes(endTime);
 
     // 영업시간 정보 없음 - 영업중으로 가정 (정보 없음)
-    if (startMinutes === null || endMinutes === null) {
-        return { isOpen: true, openStatus: 'open' };
+    if (openMinutes === null || closeMinutes === null) {
+        return {
+            isOpen: true,
+            openStatus: 'open',
+            todayTimeRaw: { openMinutes: null, closeMinutes: null, isHoliday: false }
+        };
     }
 
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayTimeRaw: BusinessTimeRaw = { openMinutes, closeMinutes, isHoliday: false };
 
     // 24시간 운영 또는 익일 종료
-    if (endMinutes <= startMinutes) {
-        const isOpen = currentMinutes >= startMinutes || currentMinutes < endMinutes;
-        return { isOpen, openStatus: isOpen ? 'open' : 'closed' };
+    if (closeMinutes <= openMinutes) {
+        const isOpen = currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+        return { isOpen, openStatus: isOpen ? 'open' : 'closed', todayTimeRaw };
     }
 
-    const isOpen = currentMinutes >= startMinutes && currentMinutes < endMinutes;
-    return { isOpen, openStatus: isOpen ? 'open' : 'closed' };
+    const isOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+    return { isOpen, openStatus: isOpen ? 'open' : 'closed', todayTimeRaw };
 }
 
 /**
@@ -146,7 +157,7 @@ function mapItemToPlace(item: PharmacyLocationApiItem): PlaceResponse | null {
     const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
     const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
 
-    const { isOpen, openStatus } = getPharmacyOpenStatus(item.startTime, item.endTime);
+    const { isOpen, openStatus, todayTimeRaw } = getPharmacyStatusAndTimeRaw(item.startTime, item.endTime);
     const todayHours = item.startTime && item.endTime
         ? { open: formatTime(item.startTime), close: formatTime(item.endTime) }
         : null;
@@ -164,6 +175,7 @@ function mapItemToPlace(item: PharmacyLocationApiItem): PlaceResponse | null {
         distance: item.distance ? Math.round(item.distance * 1000) : undefined,
         category: '약국',
         todayHours,
+        todayTimeRaw,
     };
 }
 
@@ -181,7 +193,21 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        console.log(`Fetching nearby pharmacies: lat=${lat}, lng=${lng}`);
+        // 캐시 키 생성 (소수점 3자리 = 약 100m 범위)
+        const cacheKey = MemoryCache.createLocationKey(lat, lng, 3);
+        const cachedData = pharmacyListCache.get(cacheKey) as PlaceResponse[] | null;
+
+        if (cachedData) {
+            console.log(`[CACHE HIT] Pharmacies at ${cacheKey}, ${cachedData.length} items`);
+            return NextResponse.json({
+                success: true,
+                count: cachedData.length,
+                cached: true,
+                data: cachedData,
+            });
+        }
+
+        console.log(`[CACHE MISS] Fetching nearby pharmacies: lat=${lat}, lng=${lng}`);
 
         const pharmacies = await fetchPharmaciesByLocation(lat, lng, numOfRows);
 
@@ -195,9 +221,13 @@ export async function GET(request: NextRequest) {
 
         console.log(`Found ${uniquePlaces.length} pharmacies`);
 
+        // 캐시에 저장
+        pharmacyListCache.set(cacheKey, uniquePlaces);
+
         return NextResponse.json({
             success: true,
             count: uniquePlaces.length,
+            cached: false,
             data: uniquePlaces,
         });
     } catch (error) {
