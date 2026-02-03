@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const lat = parseFloat(searchParams.get('lat') || '');
         const lng = parseFloat(searchParams.get('lng') || '');
-        const numOfRows = parseInt(searchParams.get('numOfRows') || '50', 10);
+        const numOfRows = parseInt(searchParams.get('numOfRows') || '100', 10);
 
         if (isNaN(lat) || isNaN(lng)) {
             return NextResponse.json(
