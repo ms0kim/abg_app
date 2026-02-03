@@ -214,7 +214,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 단일 마커 생성
     const createPlaceMarker = useCallback((place: Place): naver.maps.Marker | null => {
-        if (!mapInstanceRef.current || !window.naver?.maps?.Marker) return null;
+        if (!mapInstanceRef.current) return null;
 
         try {
             const marker = new window.naver.maps.Marker({
@@ -232,7 +232,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 클러스터 마커 생성
     const createClusterMarker = useCallback((clusterPlaces: Place[]): naver.maps.Marker | null => {
-        if (!mapInstanceRef.current || !window.naver?.maps?.Marker || clusterPlaces.length === 0) return null;
+        if (!mapInstanceRef.current || clusterPlaces.length === 0) return null;
         if (clusterPlaces.length === 1) return createPlaceMarker(clusterPlaces[0]);
 
         try {
@@ -272,12 +272,22 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 마커 업데이트
     useEffect(() => {
-        if (!isMapReady || !mapInstanceRef.current || !window.naver?.maps?.Marker) return;
+        if (!isMapReady || !mapInstanceRef.current) return;
 
+        // 기존 마커 제거
         markersRef.current.forEach((m) => m.setMap(null));
-        markersRef.current = clusterPlaces(places)
-            .map((cluster) => createClusterMarker(cluster))
-            .filter((m): m is naver.maps.Marker => m !== null);
+        markersRef.current = [];
+
+        // 모바일에서 지도 렌더링 완료 후 마커 생성 (Safari 대응)
+        const rafId = requestAnimationFrame(() => {
+            if (!mapInstanceRef.current) return;
+
+            markersRef.current = clusterPlaces(places)
+                .map((cluster) => createClusterMarker(cluster))
+                .filter((m): m is naver.maps.Marker => m !== null);
+        });
+
+        return () => cancelAnimationFrame(rafId);
     }, [isMapReady, places, clusterPlaces, createClusterMarker]);
 
     if (!isLoaded) {
