@@ -1,6 +1,7 @@
 'use client';
 
 import { Place, OpenStatus } from '../types';
+import { calculateOpenStatus } from '../utils/realtimeStatus';
 
 interface BottomSheetProps {
     place: Place | null;
@@ -38,6 +39,9 @@ function getStatusDisplay(openStatus: OpenStatus): { text: string; bgClass: stri
 export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetProps) {
     if (!place) return null;
 
+    // 실시간 영업 상태 계산
+    const { openStatus: realtimeOpenStatus } = calculateOpenStatus(place.todayTimeRaw);
+
     const handleBackdropClick = (e: React.MouseEvent) => {
         if (e.target === e.currentTarget) {
             onClose();
@@ -69,12 +73,12 @@ export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetPr
         <>
             {/* 배경 오버레이 */}
             <div
-                className="fixed inset-0 bg-gradient-to-b from-black/40 to-black/60 z-40 animate-fadeIn backdrop-blur-sm"
+                className="fixed inset-0 bg-gradient-to-b from-black/40 to-black/60 z-[1000] animate-fadeIn backdrop-blur-sm"
                 onClick={handleBackdropClick}
             />
 
             {/* 바텀시트 */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 animate-slideUp max-h-[70vh] overflow-y-auto">
+            <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1001] animate-slideUp max-h-[70vh] overflow-y-auto">
                 {/* 핸들 */}
                 <div className="flex justify-center pt-4 pb-2">
                     <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
@@ -90,7 +94,7 @@ export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetPr
                                     {place.name}
                                 </h2>
                                 {(() => {
-                                    const status = getStatusDisplay(place.openStatus);
+                                    const status = getStatusDisplay(realtimeOpenStatus);
                                     return (
                                         <span className={`px-3 py-1.5 ${status.bgClass} ${status.textClass} text-xs font-bold rounded-full shadow-md`}>
                                             {status.text}
@@ -186,15 +190,15 @@ export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetPr
                         )}
 
                         {/* 운영시간 */}
-                        {(place.todayHours || place.openStatus === 'holiday' || isLoading) && (
+                        {(place.todayHours || realtimeOpenStatus === 'holiday' || isLoading) && (
                             <div className={`flex gap-3 p-4 rounded-xl border ${
-                                place.openStatus === 'holiday'
+                                realtimeOpenStatus === 'holiday'
                                     ? 'bg-gradient-to-r from-amber-50 to-orange-50/50 border-amber-200/50'
                                     : 'bg-gradient-to-r from-emerald-50 to-teal-50/50 border-emerald-200/50'
                             }`}>
                                 <svg
                                     className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                                        place.openStatus === 'holiday' ? 'text-amber-500' : 'text-emerald-500'
+                                        realtimeOpenStatus === 'holiday' ? 'text-amber-500' : 'text-emerald-500'
                                     }`}
                                     fill="none"
                                     stroke="currentColor"
@@ -214,7 +218,7 @@ export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetPr
                                             <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
                                             <p className="text-sm text-gray-500">불러오는 중...</p>
                                         </div>
-                                    ) : place.openStatus === 'holiday' ? (
+                                    ) : realtimeOpenStatus === 'holiday' ? (
                                         <p className="text-sm text-amber-700 font-bold">오늘은 휴일입니다</p>
                                     ) : place.todayHours ? (
                                         <p className="text-sm text-gray-900 font-bold">

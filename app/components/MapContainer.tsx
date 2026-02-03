@@ -99,7 +99,12 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
             });
 
             mapInstanceRef.current = map;
-            setIsMapReady(true);
+
+            // 지도가 완전히 렌더링된 후 ready 상태 설정 (Safari 대응)
+            const initListener = window.naver.maps.Event.addListener(map, 'idle', () => {
+                setIsMapReady(true);
+                window.naver.maps.Event.removeListener(initListener);
+            });
         } catch {
             // 지도 초기화 실패
         }
