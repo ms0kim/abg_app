@@ -3,7 +3,6 @@
 import { NaverMapProvider } from './providers/NaverMapProvider';
 import { MapContainer } from './components/MapContainer';
 import { BottomSheet } from './components/BottomSheet';
-import { InstallPrompt } from './components/InstallPrompt';
 import { usePlaces } from './hooks/usePlaces';
 import { Header } from './components/Header';
 
@@ -52,9 +51,6 @@ export default function HomePage() {
                     onClose={() => setSelectedPlace(null)}
                     isLoading={isDetailLoading}
                 />
-
-                {/* PWA 설치 프롬프트 */}
-                <InstallPrompt />
             </div>
         </NaverMapProvider>
     );

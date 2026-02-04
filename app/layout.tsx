@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import Script from "next/script";
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { InstallPrompt } from './components/InstallPrompt';
 
 const inter = Inter({
   variable: '--font-inter',
@@ -46,7 +47,7 @@ export default function RootLayout({
         {/* iOS 스플래시 스크린 */}
         <link
           rel="apple-touch-startup-image"
-          href="/icons/icon-512x512.png"
+          href="/icons/icon.svg"
         />
         {/* iOS 상태바 스타일 */}
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -60,6 +61,7 @@ export default function RootLayout({
         className={`${inter.variable} antialiased`}
       >
         {children}
+        <InstallPrompt />
       </body>
     </html>
   );
