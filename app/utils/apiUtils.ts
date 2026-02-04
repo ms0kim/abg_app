@@ -68,7 +68,15 @@ function delay(ms: number): Promise<void> {
 /**
  * XML 응답을 파싱하여 아이템 배열 반환
  */
-export function parseXmlResponse<T>(xmlText: string): T[] {
+export interface XmlResponse<T> {
+    items: T[];
+    totalCount: number;
+}
+
+/**
+ * XML 응답을 파싱하여 아이템 배열과 메타데이터 반환
+ */
+export function parseXmlResponse<T>(xmlText: string): XmlResponse<T> {
     // 에러 메시지 확인
     if (
         xmlText.includes('Unexpected errors') ||
@@ -76,22 +84,25 @@ export function parseXmlResponse<T>(xmlText: string): T[] {
         xmlText.includes('SERVICE ERROR')
     ) {
         console.error('API 에러 응답:', xmlText.substring(0, 200));
-        return [];
+        return { items: [], totalCount: 0 };
     }
 
     try {
         const jsonData = xmlParser.parse(xmlText);
-        const items = jsonData?.response?.body?.items?.item;
+        const body = jsonData?.response?.body;
+        const items = body?.items?.item;
+        const totalCount = parseInt(body?.totalCount || '0', 10);
 
         if (!items) {
-            return [];
+            return { items: [], totalCount };
         }
 
         // 단일 아이템인 경우 배열로 변환
-        return Array.isArray(items) ? items : [items];
+        const itemsArray = Array.isArray(items) ? items : [items];
+        return { items: itemsArray, totalCount };
     } catch (error) {
         console.error('XML 파싱 실패:', error);
-        return [];
+        return { items: [], totalCount: 0 };
     }
 }
 

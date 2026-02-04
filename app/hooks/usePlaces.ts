@@ -37,6 +37,27 @@ function shouldRefetch(prev: MapBounds | null, next: MapBounds): boolean {
     return movedLat > prevHeight * MIN_MOVE_THRESHOLD || movedLng > prevWidth * MIN_MOVE_THRESHOLD;
 }
 
+/**
+ * 지도 영역 확장 (버퍼 추가)
+ * @param bounds 원본 영영
+ * @param factor 확장 비율 (0.5 = 상하좌우 50%씩 확장)
+ */
+function expandBounds(bounds: MapBounds, factor: number): MapBounds {
+    const width = bounds.ne.lng - bounds.sw.lng;
+    const height = bounds.ne.lat - bounds.sw.lat;
+
+    return {
+        sw: {
+            lat: bounds.sw.lat - height * factor,
+            lng: bounds.sw.lng - width * factor,
+        },
+        ne: {
+            lat: bounds.ne.lat + height * factor,
+            lng: bounds.ne.lng + width * factor,
+        },
+    };
+}
+
 export function usePlaces() {
     const [userLocation, setUserLocation] = useState<Location | null>(null);
     const [places, setPlaces] = useState<Place[]>([]);
@@ -74,8 +95,8 @@ export function usePlaces() {
         setIsLoading(true);
         setError(null);
 
-        // 줌 레벨에 따라 검색 개수 조정
-        const numOfRows = zoom && zoom >= 16 ? 30 : zoom && zoom >= 14 ? 50 : 100;
+        // 줌 레벨에 따라 검색 개수 조정 (기본적으로 많이 가져오도록 설정)
+        const numOfRows = 500;
 
         try {
             // 병원과 약국을 병렬로 조회
@@ -93,13 +114,11 @@ export function usePlaces() {
                 pharmaciesRes.json(),
             ]);
 
-            let hospitals: Place[] = hospitalsData.success ? hospitalsData.data : [];
-            let pharmacies: Place[] = pharmaciesData.success ? pharmaciesData.data : [];
+            const hospitals: Place[] = hospitalsData.success ? hospitalsData.data : [];
+            const pharmacies: Place[] = pharmaciesData.success ? pharmaciesData.data : [];
 
-            // 현재 지도 범위 내 장소만 필터링
-            hospitals = hospitals.filter((p) => isWithinBounds(p, bounds));
-            pharmacies = pharmacies.filter((p) => isWithinBounds(p, bounds));
-
+            // API에서 이미 지역 기반으로 데이터를 가져오므로 클라이언트에서 bounds로 필터링하지 않음
+            // (행정구역 단위 검색이므로 화면 밖의 데이터도 포함될 수 있으나, 미리 보여주는 것이 UX상 좋음)
             setPlaces([...hospitals, ...pharmacies]);
             lastFetchedBoundsRef.current = bounds;
         } catch (err) {
@@ -111,7 +130,7 @@ export function usePlaces() {
         } finally {
             setIsLoading(false);
         }
-    }, [isWithinBounds]);
+    }, []);
 
     // 사용자 위치 가져오기 (2단계: 빠른 위치 → 고정밀 위치)
     useEffect(() => {
@@ -158,6 +177,7 @@ export function usePlaces() {
     useEffect(() => {
         let result = places;
 
+        // 지도 범위 필터링 (사용자 요청: 지도 범위 안에서만 표시)
         if (currentBounds) {
             result = result.filter((place) => isWithinBounds(place, currentBounds));
         }

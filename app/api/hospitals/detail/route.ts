@@ -64,11 +64,11 @@ export async function GET(request: NextRequest) {
         }
 
         const xmlText = await response.text();
-        const items = parseXmlResponse<HospitalDetailApiItem>(xmlText);
+        const { items } = parseXmlResponse<HospitalDetailApiItem>(xmlText);
 
-        if (items.length === 0) {
+        if (!items || items.length === 0) {
             return NextResponse.json(
-                { success: false, error: '데이터를 찾을 수 없습니다.', data: null },
+                { success: false, error: '상세 정보를 찾을 수 없습니다.', data: null },
                 { status: 404 }
             );
         }

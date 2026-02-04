@@ -131,7 +131,6 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
             // 초기 로드는 위 useEffect에서 처리하므로 스킵
             if (isInitialMoveRef.current) {
                 isInitialMoveRef.current = false;
-                return;
             }
             setSelectedCluster(null);
             const info = extractMapInfo(mapInstanceRef.current!);

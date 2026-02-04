@@ -4,23 +4,37 @@ import { OpenStatus, BusinessTimeRaw } from '@/app/types';
 import { pharmacyListCache, MemoryCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
+const NAVER_CLIENT_ID = process.env.NEXT_PUBLIC_NAVER_CLIENT_ID || '';
+const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || '';
 
-// 좌표 기반 약국 검색 API (getParmacyLcinfoInqire)
-const PHARMACY_LOCATION_API = 'http://apis.data.go.kr/B552657/ErmctInsttInfoInqireService/getParmacyLcinfoInqire';
+// 약국 목록정보 조회 API (주소 기반, 요일별 영업시간 포함)
+const PHARMACY_LIST_API = 'http://apis.data.go.kr/B552657/ErmctInsttInfoInqireService/getParmacyListInfoInqire';
 
-// 좌표 기반 API 응답 타입 (필드명이 다름, XML 파서가 타입을 자동 변환할 수 있음)
-interface PharmacyLocationApiItem {
+// API 응답 타입 (목록정보 조회)
+interface PharmacyListApiItem {
+    hpid?: string;
     dutyName?: string;
     dutyAddr?: string;
     dutyTel1?: string;
-    latitude?: number | string;
-    longitude?: number | string;
-    distance?: number;
-    hpid?: string;
-    startTime?: string | number;
-    endTime?: string | number;
-    dutyDiv?: string;
-    dutyDivName?: string;
+    wgs84Lat?: number | string;
+    wgs84Lon?: number | string;
+    // 요일별 영업시간 (1:월 ~ 7:일, 8:공휴일)
+    dutyTime1s?: string | number;
+    dutyTime1c?: string | number;
+    dutyTime2s?: string | number;
+    dutyTime2c?: string | number;
+    dutyTime3s?: string | number;
+    dutyTime3c?: string | number;
+    dutyTime4s?: string | number;
+    dutyTime4c?: string | number;
+    dutyTime5s?: string | number;
+    dutyTime5c?: string | number;
+    dutyTime6s?: string | number;
+    dutyTime6c?: string | number;
+    dutyTime7s?: string | number;
+    dutyTime7c?: string | number;
+    dutyTime8s?: string | number;
+    dutyTime8c?: string | number;
 }
 
 interface PlaceResponse {
@@ -40,10 +54,52 @@ interface PlaceResponse {
 }
 
 /**
- * 시간을 분 단위로 파싱 (숫자 또는 문자열 지원)
+ * 좌표를 주소로 변환 (네이버 역지오코딩)
+ */
+async function reverseGeocode(lat: number, lng: number): Promise<{ sido: string; sigungu: string } | null> {
+    if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET) {
+        console.error('네이버 API 키가 설정되지 않았습니다.');
+        return null;
+    }
+
+    try {
+        const response = await fetch(
+            `https://naveropenapi.apigw.ntruss.com/map-reversegeocode/v2/gc?coords=${lng},${lat}&output=json&orders=admcode`,
+            {
+                headers: {
+                    'X-NCP-APIGW-API-KEY-ID': NAVER_CLIENT_ID,
+                    'X-NCP-APIGW-API-KEY': NAVER_CLIENT_SECRET,
+                },
+            }
+        );
+
+        if (!response.ok) {
+            console.error('역지오코딩 실패:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        const result = data.results?.[0];
+
+        if (!result) {
+            return null;
+        }
+
+        const sido = result.region?.area1?.name || '';
+        const sigungu = result.region?.area2?.name || '';
+
+        return { sido, sigungu };
+    } catch (error) {
+        console.error('역지오코딩 에러:', error);
+        return null;
+    }
+}
+
+/**
+ * 시간을 분 단위로 파싱
  */
 function parseTimeToMinutes(time: string | number | undefined): number | null {
-    if (time === undefined || time === null) return null;
+    if (time === undefined || time === null || time === '') return null;
 
     const str = String(time).padStart(4, '0');
     const hours = parseInt(str.substring(0, 2), 10);
@@ -58,7 +114,7 @@ function parseTimeToMinutes(time: string | number | undefined): number | null {
  * 시간을 읽기 좋은 형식으로 변환
  */
 function formatTime(time: string | number | undefined): string {
-    if (time === undefined || time === null) return '-';
+    if (time === undefined || time === null || time === '') return '-';
 
     const str = String(time).padStart(4, '0');
     const hours = parseInt(str.substring(0, 2), 10);
@@ -74,10 +130,29 @@ function formatTime(time: string | number | undefined): string {
 }
 
 /**
- * 영업 상태 및 원본 데이터 반환
- * 약국 좌표 기반 API는 오늘의 startTime/endTime만 제공
+ * 오늘 요일에 해당하는 영업시간 가져오기
  */
-function getPharmacyStatusAndTimeRaw(startTime?: string | number, endTime?: string | number): {
+function getTodayBusinessTime(item: PharmacyListApiItem): { startTime?: string | number; endTime?: string | number } {
+    const today = new Date().getDay(); // 0:일, 1:월, 2:화, ... 6:토
+
+    const dayMap: Record<number, { start: string | number | undefined; end: string | number | undefined }> = {
+        0: { start: item.dutyTime7s, end: item.dutyTime7c }, // 일요일
+        1: { start: item.dutyTime1s, end: item.dutyTime1c }, // 월요일
+        2: { start: item.dutyTime2s, end: item.dutyTime2c },
+        3: { start: item.dutyTime3s, end: item.dutyTime3c },
+        4: { start: item.dutyTime4s, end: item.dutyTime4c },
+        5: { start: item.dutyTime5s, end: item.dutyTime5c },
+        6: { start: item.dutyTime6s, end: item.dutyTime6c }, // 토요일
+    };
+
+    const times = dayMap[today];
+    return { startTime: times?.start, endTime: times?.end };
+}
+
+/**
+ * 영업 상태 및 원본 데이터 반환
+ */
+function getStatusAndTimeRaw(startTime?: string | number, endTime?: string | number): {
     isOpen: boolean;
     openStatus: OpenStatus;
     todayTimeRaw: BusinessTimeRaw;
@@ -85,12 +160,12 @@ function getPharmacyStatusAndTimeRaw(startTime?: string | number, endTime?: stri
     const openMinutes = parseTimeToMinutes(startTime);
     const closeMinutes = parseTimeToMinutes(endTime);
 
-    // 영업시간 정보 없음 - 영업중으로 가정 (정보 없음)
+    // 영업시간 정보 없음 - 오늘 휴무
     if (openMinutes === null || closeMinutes === null) {
         return {
-            isOpen: true,
-            openStatus: 'open',
-            todayTimeRaw: { openMinutes: null, closeMinutes: null, isHoliday: false }
+            isOpen: false,
+            openStatus: 'holiday',
+            todayTimeRaw: { openMinutes: null, closeMinutes: null, isHoliday: true }
         };
     }
 
@@ -109,58 +184,103 @@ function getPharmacyStatusAndTimeRaw(startTime?: string | number, endTime?: stri
 }
 
 /**
- * 좌표 기반 약국 검색 (getParmacyLcinfoInqire)
+ * 주소 기반 약국 목록 조회
  */
-async function fetchPharmaciesByLocation(
-    lat: number,
-    lng: number,
+async function fetchPharmaciesByAddress(
+    sido: string,
+    sigungu: string,
     numOfRows: number
-): Promise<PharmacyLocationApiItem[]> {
+): Promise<PharmacyListApiItem[]> {
     if (!SERVICE_KEY) {
         console.error('공공데이터 API 서비스 키가 설정되지 않았습니다.');
         return [];
     }
 
-    const url = new URL(PHARMACY_LOCATION_API);
-    url.searchParams.set('WGS84_LON', String(lng));
-    url.searchParams.set('WGS84_LAT', String(lat));
+    const url = new URL(PHARMACY_LIST_API);
+    url.searchParams.set('Q0', sido);
+    url.searchParams.set('Q1', sigungu);
     url.searchParams.set('numOfRows', String(numOfRows));
     url.searchParams.set('pageNo', '1');
 
     const finalUrl = `${url.toString()}&ServiceKey=${SERVICE_KEY}`;
 
-    console.log(`Fetching pharmacies by location: lat=${lat}, lng=${lng}`);
+    console.log(`Fetching pharmacies: ${sido} ${sigungu}`);
 
     try {
-        const response = await fetchWithRetry(finalUrl);
+        const firstResponse = await fetchWithRetry(finalUrl);
+        if (!firstResponse.ok) return [];
 
-        if (!response.ok) {
-            console.error('약국 API 응답 에러:', response.status);
-            return [];
+        const firstXml = await firstResponse.text();
+        const { items: firstItems, totalCount } = parseXmlResponse<PharmacyListApiItem>(firstXml);
+
+        console.log(`Pharmacy API Total Count: ${totalCount} (First fetch: ${firstItems.length})`);
+
+        if (totalCount <= firstItems.length) {
+            return firstItems;
         }
 
-        const xmlText = await response.text();
-        return parseXmlResponse<PharmacyLocationApiItem>(xmlText);
+        const maxItems = 2000;
+        const targetCount = Math.min(totalCount, maxItems);
+        const totalPages = Math.ceil(targetCount / numOfRows);
+
+        const promises: Promise<PharmacyListApiItem[]>[] = [];
+
+        for (let page = 2; page <= totalPages; page++) {
+            const pageUrl = finalUrl.replace('pageNo=1', `pageNo=${page}`);
+            promises.push(
+                fetchWithRetry(pageUrl)
+                    .then(res => res.text())
+                    .then(xml => parseXmlResponse<PharmacyListApiItem>(xml).items)
+                    .catch(err => {
+                        console.error(`Pharmacy Page ${page} fetch failed:`, err);
+                        return [];
+                    })
+            );
+        }
+
+        const restItems = await Promise.all(promises);
+        return [...firstItems, ...restItems.flat()];
+
     } catch (error) {
         console.error('약국 API 호출 실패:', error);
         return [];
     }
 }
 
-function mapItemToPlace(item: PharmacyLocationApiItem): PlaceResponse | null {
-    // 좌표 기반 API는 latitude/longitude 필드 사용
-    if (!item.latitude || !item.longitude) {
+/**
+ * 두 좌표 사이의 거리 계산 (미터)
+ */
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c);
+}
+
+function mapItemToPlace(item: PharmacyListApiItem, userLat: number, userLng: number): PlaceResponse | null {
+    if (!item.wgs84Lat || !item.wgs84Lon) {
         return null;
     }
 
-    // 숫자로 변환 (XML 파서가 문자열로 반환할 수 있음)
-    const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
-    const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
+    const lat = typeof item.wgs84Lat === 'string' ? parseFloat(item.wgs84Lat) : item.wgs84Lat;
+    const lng = typeof item.wgs84Lon === 'string' ? parseFloat(item.wgs84Lon) : item.wgs84Lon;
 
-    const { isOpen, openStatus, todayTimeRaw } = getPharmacyStatusAndTimeRaw(item.startTime, item.endTime);
-    const todayHours = item.startTime && item.endTime
-        ? { open: formatTime(item.startTime), close: formatTime(item.endTime) }
+    if (isNaN(lat) || isNaN(lng)) {
+        return null;
+    }
+
+    const { startTime, endTime } = getTodayBusinessTime(item);
+    const { isOpen, openStatus, todayTimeRaw } = getStatusAndTimeRaw(startTime, endTime);
+
+    const todayHours = startTime && endTime
+        ? { open: formatTime(startTime), close: formatTime(endTime) }
         : null;
+
+    const distance = calculateDistance(userLat, userLng, lat, lng);
 
     return {
         id: item.hpid || `pharmacy_${lat}_${lng}`,
@@ -172,7 +292,7 @@ function mapItemToPlace(item: PharmacyLocationApiItem): PlaceResponse | null {
         openStatus,
         address: item.dutyAddr,
         phone: item.dutyTel1,
-        distance: item.distance ? Math.round(item.distance * 1000) : undefined,
+        distance,
         category: '약국',
         todayHours,
         todayTimeRaw,
@@ -184,7 +304,8 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const lat = parseFloat(searchParams.get('lat') || '');
         const lng = parseFloat(searchParams.get('lng') || '');
-        const numOfRows = parseInt(searchParams.get('numOfRows') || '100', 10);
+        // 시/군/구 단위 검색이므로 충분한 데이터를 가져오기 위해 기본값을 500으로 설정
+        const numOfRows = parseInt(searchParams.get('numOfRows') || '500', 10);
 
         if (isNaN(lat) || isNaN(lng)) {
             return NextResponse.json(
@@ -193,8 +314,8 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // 캐시 키 생성 (소수점 3자리 = 약 100m 범위)
-        const cacheKey = MemoryCache.createLocationKey(lat, lng, 3);
+        // 캐시 키 생성 (소수점 2자리 = 약 1km 범위)
+        const cacheKey = MemoryCache.createLocationKey(lat, lng, 2);
         const cachedData = pharmacyListCache.get(cacheKey) as PlaceResponse[] | null;
 
         if (cachedData) {
@@ -207,19 +328,34 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        console.log(`[CACHE MISS] Fetching nearby pharmacies: lat=${lat}, lng=${lng}`);
+        // 좌표를 주소로 변환
+        const address = await reverseGeocode(lat, lng);
 
-        const pharmacies = await fetchPharmaciesByLocation(lat, lng, numOfRows);
+        if (!address) {
+            return NextResponse.json({
+                success: false,
+                error: '주소를 찾을 수 없습니다.',
+                data: [],
+            });
+        }
+
+        console.log(`[CACHE MISS] Fetching pharmacies: ${address.sido} ${address.sigungu}`);
+
+        const pharmacies = await fetchPharmaciesByAddress(address.sido, address.sigungu, numOfRows);
+        console.log(`API returned ${pharmacies.length} pharmacies`);
 
         const places = pharmacies
-            .map((item) => mapItemToPlace(item))
+            .map((item) => mapItemToPlace(item, lat, lng))
             .filter((place): place is PlaceResponse => place !== null);
 
         // 거리순 정렬 및 중복 제거
         places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
         const uniquePlaces = removeDuplicatesByCoords(places);
 
-        console.log(`Found ${uniquePlaces.length} pharmacies`);
+        const openCount = uniquePlaces.filter(p => p.isOpen).length;
+        const closedCount = uniquePlaces.filter(p => p.openStatus === 'closed').length;
+        const holidayCount = uniquePlaces.filter(p => p.openStatus === 'holiday').length;
+        console.log(`Found ${uniquePlaces.length} pharmacies (Open: ${openCount}, Closed: ${closedCount}, Holiday: ${holidayCount})`);
 
         // 캐시에 저장
         pharmacyListCache.set(cacheKey, uniquePlaces);
