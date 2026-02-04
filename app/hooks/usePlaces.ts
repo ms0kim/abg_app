@@ -154,14 +154,11 @@ export function usePlaces() {
         );
     }, []);
 
-    // 필터 적용
+    // 필터 적용 (엄격한 Viewport 필터링)
     useEffect(() => {
-        let result = places;
+        if (!currentBounds) return; // 아직 지도가 준비되지 않았으면 필터링 보류
 
-        // 지도 범위 필터링 (사용자 요청: 지도 범위 안에서만 표시)
-        if (currentBounds) {
-            result = result.filter((place) => isWithinBounds(place, currentBounds));
-        }
+        let result = places.filter((place) => isWithinBounds(place, currentBounds));
 
         if (filter !== 'all') {
             result = result.filter((place) => place.type === filter);

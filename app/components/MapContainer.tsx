@@ -21,8 +21,8 @@ const GEOLOCATION_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumA
 const DEFAULT_LOCATION = { lat: 37.5665, lng: 126.978 };
 
 // 마커 아이콘 SVG
-const HOSPITAL_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>`;
-const PHARMACY_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M4.5 10.5L10.5 4.5C11.3 3.7 12.7 3.7 13.5 4.5L19.5 10.5C20.3 11.3 20.3 12.7 19.5 13.5L13.5 19.5C12.7 20.3 11.3 20.3 10.5 19.5L4.5 13.5C3.7 12.7 3.7 11.3 4.5 10.5ZM13.5 7.5L7.5 13.5"/></svg>`;
+const HOSPITAL_ICON = `<svg xmlns="http://www.w3.org/2000/svg" height="22px" viewBox="0 -960 960 960" width="22px" fill="white"><path d="M371-196v-175H196v-217h175v-176h217v176h176v217H588v175H371Z"/></svg>`;
+const PHARMACY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" height="19px" viewBox="0 -960 960 960" width="19px" fill="white"><path d="m654-357 101-100q29-29 45-68t16-81q0-87.73-61.13-148.87Q693.73-816 606-816q-42 0-81 16t-68 45L357-654l297 297ZM354-144q42 0 81-16t68-45l100-101-297-297-101 100q-29 29-45 68t-16 81q0 87.73 61.13 148.87Q266.27-144 354-144Z"/></svg>`;
 
 // 마커 색상
 const MARKER_COLORS = {
@@ -76,11 +76,11 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         };
     }, []);
 
-    // 지도 초기화
+    // 지도 초기화 및 이벤트 등록
     useEffect(() => {
         if (!isLoaded || !mapRef.current || !window.naver?.maps) return;
 
-        // 이미 지도 인스턴스가 있으면 ready 상태만 설정 (Strict Mode 대응)
+        // 이미 지도 인스턴스가 있으면 ready 상태만 설정
         if (mapInstanceRef.current) {
             setIsMapReady(true);
             return;
@@ -100,49 +100,39 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
             mapInstanceRef.current = map;
 
-            // 지도가 완전히 렌더링된 후 ready 상태 설정 (Safari 대응)
-            const initListener = window.naver.maps.Event.addListener(map, 'idle', () => {
+            // 지도 로드 완료 및 이동 이벤트 통합 처리
+            const handleIdle = () => {
                 setIsMapReady(true);
+                setSelectedCluster(null);
+
+                if (onMapIdle) {
+                    const info = extractMapInfo(map);
+                    onMapIdle(info.center, info.bounds, info.zoom);
+                }
+            };
+
+            // 최초 로드 시 한 번 실행
+            const initListener = window.naver.maps.Event.addListener(map, 'idle', () => {
+                handleIdle();
                 window.naver.maps.Event.removeListener(initListener);
+
+                // 이후 이동에 대해 지속적 리스너 등록
+                idleListenerRef.current = window.naver.maps.Event.addListener(map, 'idle', handleIdle);
             });
+
         } catch {
             // 지도 초기화 실패
         }
-    }, [isLoaded, userLocation]);
+    }, [isLoaded, userLocation, onMapIdle, extractMapInfo]);
 
-    // 초기 데이터 로드
+    // Cleanup
     useEffect(() => {
-        if (!isMapReady || !mapInstanceRef.current || !onMapIdle) return;
-
-        // 지도 준비되면 초기 데이터 로드
-        const info = extractMapInfo(mapInstanceRef.current);
-        onMapIdle(info.center, info.bounds, info.zoom);
-    }, [isMapReady]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // idle 이벤트 핸들러 (지도 이동 시)
-    useEffect(() => {
-        if (!isMapReady || !mapInstanceRef.current || !onMapIdle) return;
-
-        if (idleListenerRef.current) {
-            window.naver.maps.Event.removeListener(idleListenerRef.current);
-        }
-
-        idleListenerRef.current = window.naver.maps.Event.addListener(mapInstanceRef.current, 'idle', () => {
-            // 초기 로드는 위 useEffect에서 처리하므로 스킵
-            if (isInitialMoveRef.current) {
-                isInitialMoveRef.current = false;
-            }
-            setSelectedCluster(null);
-            const info = extractMapInfo(mapInstanceRef.current!);
-            onMapIdle(info.center, info.bounds, info.zoom);
-        });
-
         return () => {
             if (idleListenerRef.current) {
                 window.naver.maps.Event.removeListener(idleListenerRef.current);
             }
         };
-    }, [isMapReady, onMapIdle, extractMapInfo]);
+    }, []);
 
     // 사용자 위치 마커
     useEffect(() => {
@@ -327,10 +317,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
                 onClick={handleRefreshClick}
                 className="absolute bottom-24 left-1/2 -translate-x-1/2 glass px-6 py-3.5 rounded-full shadow-xl border-2 border-white/50 flex items-center gap-2.5 hover:scale-105 active:scale-95 transition-all duration-300 z-10 group"
             >
-                <svg className="w-5 h-5 text-blue-500 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#3b82f6"><path d="M536.5-503.5Q560-527 560-560t-23.5-56.5Q513-640 480-640t-56.5 23.5Q400-593 400-560t23.5 56.5Q447-480 480-480t56.5-23.5ZM480-186q122-112 181-203.5T720-552q0-109-69.5-178.5T480-800q-101 0-170.5 69.5T240-552q0 71 59 162.5T480-186Zm0 106Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 100-79.5 217.5T480-80Zm0-480Z" /></svg>
                 <span className="text-sm font-bold text-gray-800">내 위치에서 다시 찾기</span>
             </button>
 

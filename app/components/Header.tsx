@@ -12,8 +12,10 @@ export function Header({ filter, setFilter, places, error, isLoading }: HeaderPr
     return (
         <header className="relative bg-white shadow-md z-20">
             <div className="relative px-4 py-4">
-                <h1 className="text-2xl font-bold text-gray-900 mb-1 tracking-tight">
-                    🤒 아프면 바로가
+                <h1 className="text-2xl font-bold text-gray-900 mb-1 tracking-tight flex items-center gap-2">
+                    {/* 메인 아이콘 */}
+                    <svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 -960 960 960" width="28px" fill="#3b82f6"><path d="M444-408h72v-108h108v-72H516v-108h-72v108H336v72h108v108Zm36 312Q323.03-227.11 245.51-339.55 168-452 168-549q0-134 89-224.5T479.5-864q133.5 0 223 90.5T792-549q0 97-77 209T480-96Z" /></svg>
+                    아프면 바로가
                 </h1>
                 <p className="text-sm text-gray-600">지금 바로 갈 수 있는 병원과 약국이에요</p>
             </div>
@@ -28,7 +30,7 @@ export function Header({ filter, setFilter, places, error, isLoading }: HeaderPr
                         }`}
                 >
                     <span className="flex items-center gap-1.5">
-                        전체 <span className="font-bold">({places.length})</span>
+                        전체
                     </span>
                 </button>
                 <button
@@ -39,7 +41,8 @@ export function Header({ filter, setFilter, places, error, isLoading }: HeaderPr
                         }`}
                 >
                     <span className="flex items-center gap-1.5">
-                        🏥 병원 <span className="font-bold">({places.filter((p) => p.type === 'hospital').length})</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor"><path d="M336-144v-192H144v-288h192v-192h288v192h192v288H624v192H336Zm72-72h144v-192h192v-144H552v-192H408v192H216v144h192v192Zm72-264Z" /></svg>
+                        병원
                     </span>
                 </button>
                 <button
@@ -50,7 +53,8 @@ export function Header({ filter, setFilter, places, error, isLoading }: HeaderPr
                         }`}
                 >
                     <span className="flex items-center gap-1.5">
-                        💊 약국 <span className="font-bold">({places.filter((p) => p.type === 'pharmacy').length})</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor"><path d="M354-144q-87.73 0-148.87-61.13Q144-266.27 144-354q0-42 16-81t45-68l252-252q29-29 68-45t81-16q87.73 0 148.87 61.13Q816-693.73 816-606q0 42-16 81t-45 68L503-205q-29 29-68 45t-81 16Zm249-264 101-100q20-20 30-45t10-52.67q0-57.24-40.55-97.78Q662.91-744 605.67-744 578-744 553-734t-45 30L408-603l195 195ZM354.33-216Q382-216 407-226t45-30l100-101-195-195-100 100q-20 20-30.5 45T216-354.33q0 57.24 40.55 97.78Q297.09-216 354.33-216Z" /></svg>
+                        약국
                     </span>
                 </button>
             </div>

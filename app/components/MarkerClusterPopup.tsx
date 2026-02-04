@@ -108,13 +108,9 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                                         style={{ background: theme.gradient }}
                                     >
                                         {isHospital ? (
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                                                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
-                                            </svg>
+                                            <svg xmlns="http://www.w3.org/2000/svg" height="22px" viewBox="0 -960 960 960" width="22px" fill="white"><path d="M371-196v-175H196v-217h175v-176h217v176h176v217H588v175H371Z" /></svg>
                                         ) : (
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                                                <path d="M4.5 10.5L10.5 4.5C11.3 3.7 12.7 3.7 13.5 4.5L19.5 10.5C20.3 11.3 20.3 12.7 19.5 13.5L13.5 19.5C12.7 20.3 11.3 20.3 10.5 19.5L4.5 13.5C3.7 12.7 3.7 11.3 4.5 10.5ZM13.5 7.5L7.5 13.5" />
-                                            </svg>
+                                            <svg xmlns="http://www.w3.org/2000/svg" height="19px" viewBox="0 -960 960 960" width="19px" fill="white"><path d="m654-357 101-100q29-29 45-68t16-81q0-87.73-61.13-148.87Q693.73-816 606-816q-42 0-81 16t-68 45L357-654l297 297ZM354-144q42 0 81-16t68-45l100-101-297-297-101 100q-29 29-45 68t-16 81q0 87.73 61.13 148.87Q266.27-144 354-144Z" /></svg>
                                         )}
                                     </div>
 
