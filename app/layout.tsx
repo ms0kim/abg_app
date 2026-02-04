@@ -47,7 +47,7 @@ export default function RootLayout({
         {/* iOS 스플래시 스크린 */}
         <link
           rel="apple-touch-startup-image"
-          href="/icons/icon.svg"
+          href="/icons/icon-512x512.png"
         />
         {/* iOS 상태바 스타일 */}
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
