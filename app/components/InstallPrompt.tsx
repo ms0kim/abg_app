@@ -89,26 +89,8 @@ export function InstallPrompt() {
       <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-4 max-w-md mx-auto">
         <div className="flex items-start gap-4">
           {/* 앱 아이콘 */}
-          <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
-            <svg
-              className="w-8 h-8 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
+          <div className="w-14 h-14 bg-gradient-to-br rounded-xl flex items-center justify-center flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" height="40px" viewBox="0 -960 960 960" width="40px" fill="#3b82f6"><path d="M444-408h72v-108h108v-72H516v-108h-72v108H336v72h108v108Zm36 312Q323.03-227.11 245.51-339.55 168-452 168-549q0-134 89-224.5T479.5-864q133.5 0 223 90.5T792-549q0 97-77 209T480-96Z" /></svg>
           </div>
 
           <div className="flex-1 min-w-0">
@@ -145,7 +127,7 @@ export function InstallPrompt() {
               // Android/Desktop 설치 버튼
               <button
                 onClick={handleInstall}
-                className="mt-3 w-full bg-blue-600 text-white py-2.5 rounded-xl font-medium hover:bg-blue-700 transition-colors"
+                className="mt-3 w-full text-white py-2.5 rounded-xl font-medium transition-colors bg-blue-500 text-white shadow-lg shadow-blue-500/30"
               >
                 설치하기
               </button>
