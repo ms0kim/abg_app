@@ -107,6 +107,55 @@ export function parseXmlResponse<T>(xmlText: string): XmlResponse<T> {
 }
 
 /**
+ * 페이지네이션이 적용된 데이터 조회 (병렬 처리)
+ */
+export async function fetchWithPagination<T>(
+    initialUrl: string,
+    numOfRows: number = 500,
+    maxItems: number = 2000
+): Promise<T[]> {
+    try {
+        // 첫 페이지 요청
+        const firstResponse = await fetchWithRetry(initialUrl);
+        if (!firstResponse.ok) return [];
+
+        const firstXml = await firstResponse.text();
+        const { items: firstItems, totalCount } = parseXmlResponse<T>(firstXml);
+
+        console.log(`API Total Count: ${totalCount} (First fetch: ${firstItems.length})`);
+
+        if (totalCount <= firstItems.length) {
+            return firstItems;
+        }
+
+        const targetCount = Math.min(totalCount, maxItems);
+        const totalPages = Math.ceil(targetCount / numOfRows);
+
+        const promises: Promise<T[]>[] = [];
+
+        for (let page = 2; page <= totalPages; page++) {
+            // pageNo=1을 pageNo={page}로 대체
+            const pageUrl = initialUrl.replace('pageNo=1', `pageNo=${page}`);
+            promises.push(
+                fetchWithRetry(pageUrl)
+                    .then(res => res.text())
+                    .then(xml => parseXmlResponse<T>(xml).items)
+                    .catch(err => {
+                        console.error(`Page ${page} fetch failed:`, err);
+                        return [];
+                    })
+            );
+        }
+
+        const restItems = await Promise.all(promises);
+        return [...firstItems, ...restItems.flat()];
+    } catch (error) {
+        console.error('Pagination fetch error:', error);
+        return [];
+    }
+}
+
+/**
  * 중복 제거 (좌표 기준)
  */
 export function removeDuplicatesByCoords<T extends { lat: number; lng: number }>(

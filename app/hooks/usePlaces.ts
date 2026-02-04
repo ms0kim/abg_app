@@ -37,26 +37,7 @@ function shouldRefetch(prev: MapBounds | null, next: MapBounds): boolean {
     return movedLat > prevHeight * MIN_MOVE_THRESHOLD || movedLng > prevWidth * MIN_MOVE_THRESHOLD;
 }
 
-/**
- * 지도 영역 확장 (버퍼 추가)
- * @param bounds 원본 영영
- * @param factor 확장 비율 (0.5 = 상하좌우 50%씩 확장)
- */
-function expandBounds(bounds: MapBounds, factor: number): MapBounds {
-    const width = bounds.ne.lng - bounds.sw.lng;
-    const height = bounds.ne.lat - bounds.sw.lat;
 
-    return {
-        sw: {
-            lat: bounds.sw.lat - height * factor,
-            lng: bounds.sw.lng - width * factor,
-        },
-        ne: {
-            lat: bounds.ne.lat + height * factor,
-            lng: bounds.ne.lng + width * factor,
-        },
-    };
-}
 
 export function usePlaces() {
     const [userLocation, setUserLocation] = useState<Location | null>(null);

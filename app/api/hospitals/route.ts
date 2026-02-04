@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
+import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords, fetchWithPagination } from '@/app/utils/apiUtils';
 import { OpenStatus, BusinessTimeRaw } from '@/app/types';
 import { hospitalListCache, MemoryCache } from '@/app/utils/cache';
 
@@ -241,48 +241,8 @@ async function fetchHospitalsByAddress(
 }
 
 async function fetchHospitalList(url: string): Promise<HospitalListApiItem[]> {
-    try {
-        // 첫 페이지 요청
-        const firstResponse = await fetchWithRetry(url);
-        if (!firstResponse.ok) return [];
-
-        const firstXml = await firstResponse.text();
-        const { items: firstItems, totalCount } = parseXmlResponse<HospitalListApiItem>(firstXml);
-
-        console.log(`Hospital API Total Count: ${totalCount} (First fetch: ${firstItems.length})`);
-
-        if (totalCount <= firstItems.length) {
-            return firstItems;
-        }
-
-        // 추가 페이지 계산 (최대 2000개 제한)
-        const numOfRows = 500; // 현재 설정된 numOfRows와 맞춰야 함 (URL 파싱해서 확인하거나 상수로 관리 권장)
-        const maxItems = 2000;
-        const targetCount = Math.min(totalCount, maxItems);
-        const totalPages = Math.ceil(targetCount / numOfRows);
-
-        const promises: Promise<HospitalListApiItem[]>[] = [];
-
-        for (let page = 2; page <= totalPages; page++) {
-            const pageUrl = url.replace('pageNo=1', `pageNo=${page}`);
-            promises.push(
-                fetchWithRetry(pageUrl)
-                    .then(res => res.text())
-                    .then(xml => parseXmlResponse<HospitalListApiItem>(xml).items)
-                    .catch(err => {
-                        console.error(`Page ${page} fetch failed:`, err);
-                        return [];
-                    })
-            );
-        }
-
-        const restItems = await Promise.all(promises);
-        return [...firstItems, ...restItems.flat()];
-
-    } catch (error) {
-        console.error('병원 API 호출 실패:', error);
-        return [];
-    }
+    // 500개씩, 최대 2000개 조회
+    return fetchWithPagination<HospitalListApiItem>(url, 500, 2000);
 }
 
 /**

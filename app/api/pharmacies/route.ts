@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords } from '@/app/utils/apiUtils';
+import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords, fetchWithPagination } from '@/app/utils/apiUtils';
 import { OpenStatus, BusinessTimeRaw } from '@/app/types';
 import { pharmacyListCache, MemoryCache } from '@/app/utils/cache';
 
@@ -207,40 +207,7 @@ async function fetchPharmaciesByAddress(
     console.log(`Fetching pharmacies: ${sido} ${sigungu}`);
 
     try {
-        const firstResponse = await fetchWithRetry(finalUrl);
-        if (!firstResponse.ok) return [];
-
-        const firstXml = await firstResponse.text();
-        const { items: firstItems, totalCount } = parseXmlResponse<PharmacyListApiItem>(firstXml);
-
-        console.log(`Pharmacy API Total Count: ${totalCount} (First fetch: ${firstItems.length})`);
-
-        if (totalCount <= firstItems.length) {
-            return firstItems;
-        }
-
-        const maxItems = 2000;
-        const targetCount = Math.min(totalCount, maxItems);
-        const totalPages = Math.ceil(targetCount / numOfRows);
-
-        const promises: Promise<PharmacyListApiItem[]>[] = [];
-
-        for (let page = 2; page <= totalPages; page++) {
-            const pageUrl = finalUrl.replace('pageNo=1', `pageNo=${page}`);
-            promises.push(
-                fetchWithRetry(pageUrl)
-                    .then(res => res.text())
-                    .then(xml => parseXmlResponse<PharmacyListApiItem>(xml).items)
-                    .catch(err => {
-                        console.error(`Pharmacy Page ${page} fetch failed:`, err);
-                        return [];
-                    })
-            );
-        }
-
-        const restItems = await Promise.all(promises);
-        return [...firstItems, ...restItems.flat()];
-
+        return fetchWithPagination<PharmacyListApiItem>(finalUrl, numOfRows, 2000);
     } catch (error) {
         console.error('약국 API 호출 실패:', error);
         return [];
