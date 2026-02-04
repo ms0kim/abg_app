@@ -5,6 +5,7 @@ import { MapContainer } from './components/MapContainer';
 import { BottomSheet } from './components/BottomSheet';
 import { usePlaces } from './hooks/usePlaces';
 import { Header } from './components/Header';
+import { useEffect } from 'react';
 
 export default function HomePage() {
     const {
@@ -22,6 +23,15 @@ export default function HomePage() {
         handleRefreshLocation,
         handlePlaceClick
     } = usePlaces();
+
+    useEffect(() => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker
+                .register('/sw.js')
+                .then((registration) => console.log('Scope: ', registration.scope))
+                .catch((err) => console.log('SW registration failed: ', err));
+        }
+    }, []);
 
     return (
         <NaverMapProvider>
