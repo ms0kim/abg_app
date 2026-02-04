@@ -113,45 +113,79 @@ export function usePlaces() {
         }
     }, []);
 
-    // 사용자 위치 가져오기 (2단계: 빠른 위치 → 고정밀 위치)
+    // Geolocation Promise 래퍼 함수 (컴포넌트 밖이나 안에 정의)
+    const getPosition = (options?: PositionOptions): Promise<GeolocationPosition> => {
+        return new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, options);
+        });
+    };
+
     useEffect(() => {
-        if (!('geolocation' in navigator)) {
-            setUserLocation(DEFAULT_LOCATION);
-            setError('위치 서비스를 지원하지 않는 브라우저입니다.');
-            return;
-        }
+        let isMounted = true; // 컴포넌트 마운트 상태 추적
 
-        setIsLoading(true);
-        let hasReceivedLocation = false;
+        const initLocation = async () => {
+            if (!('geolocation' in navigator)) {
+                setUserLocation(DEFAULT_LOCATION);
+                setError('위치 서비스를 지원하지 않는 브라우저입니다.');
+                return;
+            }
 
-        // 1단계: 빠른 위치 (캐시 허용)
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                if (!hasReceivedLocation) {
-                    setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-                    hasReceivedLocation = true;
+            setIsLoading(true);
+
+            try {
+                // 1단계: 빠른 위치 시도 (캐시된 위치가 있으면 즉시 반환)
+                // 타임아웃을 짧게 주어 캐시가 없으면 바로 에러를 내고 다음 단계로 넘어가게 함
+                try {
+                    const fastPos = await getPosition({ ...GEOLOCATION_OPTIONS.fast, timeout: 1000 });
+                    if (isMounted) {
+                        setUserLocation({
+                            lat: fastPos.coords.latitude,
+                            lng: fastPos.coords.longitude
+                        });
+                        // 빠른 위치를 잡았더라도 로딩을 끄지 않고 정밀 위치를 계속 시도할지,
+                        // 아니면 여기서 일단 로딩을 끌지 결정 (UX 선택).
+                        // 보통 지도가 이동해야 하므로 로딩을 유지하거나, 사용자에게 대략적 위치를 먼저 보여줍니다.
+                    }
+                } catch (e) {
+                    // 빠른 위치 실패 시 무시하고 정밀 위치 진행
                 }
-            },
-            () => { },
-            GEOLOCATION_OPTIONS.fast
-        );
 
-        // 2단계: 고정밀 위치 (GPS)
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-                hasReceivedLocation = true;
-                setIsLoading(false);
-            },
-            () => {
-                if (!hasReceivedLocation) {
-                    setUserLocation(DEFAULT_LOCATION);
-                    setError('위치 정보를 가져올 수 없어 기본 위치로 설정했습니다.');
+                // 2단계: 정밀 위치 요청 (실제 GPS)
+                // 앞선 단계에서 위치를 잡았더라도, 더 정확한 위치로 보정합니다.
+                const accuratePos = await getPosition(GEOLOCATION_OPTIONS.accurate);
+
+                if (isMounted) {
+                    setUserLocation({
+                        lat: accuratePos.coords.latitude,
+                        lng: accuratePos.coords.longitude
+                    });
+                    setIsLoading(false); // 최종 완료 시 로딩 해제
                 }
-                setIsLoading(false);
-            },
-            GEOLOCATION_OPTIONS.accurate
-        );
+
+            } catch (err: any) {
+                // 정밀 위치까지 실패했을 경우
+                if (isMounted) {
+                    // 이미 1단계에서 위치를 잡았다면 에러 처리 하지 않음
+                    if (!userLocation) {
+                        setUserLocation(DEFAULT_LOCATION);
+
+                        const messages: Record<number, string> = {
+                            1: '위치 권한이 거부되었습니다.', // PERMISSION_DENIED
+                            2: '위치 정보를 사용할 수 없습니다.', // POSITION_UNAVAILABLE
+                            3: '위치 요청 시간이 초과되었습니다.', // TIMEOUT
+                        };
+                        setError(messages[err.code] || '위치 정보를 가져올 수 없습니다.');
+                    }
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        initLocation();
+
+        return () => {
+            isMounted = false; // 클린업
+        };
     }, []);
 
     // 필터 적용 (엄격한 Viewport 필터링)
