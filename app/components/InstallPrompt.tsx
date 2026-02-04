@@ -39,6 +39,7 @@ export function InstallPrompt() {
 
     // beforeinstallprompt 이벤트 리스너 (Android/Desktop Chrome)
     const handleBeforeInstallPrompt = (e: Event) => {
+      console.log('👍 beforeinstallprompt event fired!'); // 디버깅용 로그
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       setShowPrompt(true);
