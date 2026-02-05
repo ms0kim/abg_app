@@ -146,11 +146,25 @@
     @apply border-border outline-ring/50;
   }
 
+  html,
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* 모바일 스크롤 방지 */
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    /* iOS Safari 바운스 방지 */
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 바텀시트가 열렸을 때 배경 스크롤 방지 */
+  body.bottomsheet-open {
+    touch-action: none;
   }
 }
 
@@ -298,4 +312,18 @@ html {
 
 .animate-pulse-glow {
   animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 네이버 지도 줌 컨트롤 z-index 조정 (팝업보다 낮게) */
+div[style*="position: absolute"][style*="right: 0"][style*="top: 0"] {
+  z-index: 20 !important;
+}
+
+/* 네이버 지도 내부 컨트롤 요소들 */
+.map_control,
+.ncp-control,
+.ncp-btn,
+[id*="zoom"],
+[class*="ctrl"] {
+  z-index: 20 !important;
 }

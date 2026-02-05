@@ -11,11 +11,10 @@ interface MapContainerProps {
     places: Place[];
     onPlaceClick: (place: Place) => void;
     onRefreshLocation: () => void;
+    onRefreshSearch?: () => void;
     onMapIdle?: (center: Location, bounds: MapBounds, zoom: number) => void;
+    isLoading?: boolean;
 }
-
-// 위치 요청 옵션
-const GEOLOCATION_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
 // 기본 위치 (서울 시청)
 const DEFAULT_LOCATION = { lat: 37.5665, lng: 126.978 };
@@ -31,13 +30,18 @@ const MARKER_COLORS = {
     closed: { bg: '#9ca3af', arrow: '#9ca3af' },
 };
 
-export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLocation, onMapIdle }: MapContainerProps) {
+export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLocation, onRefreshSearch, onMapIdle, isLoading }: MapContainerProps) {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<naver.maps.Map | null>(null);
     const markersRef = useRef<naver.maps.Marker[]>([]);
     const userMarkerRef = useRef<naver.maps.Marker | null>(null);
     const idleListenerRef = useRef<naver.maps.MapEventListener | null>(null);
-    const isInitialMoveRef = useRef(true);
+
+    // 콜백 ref - 항상 최신 콜백을 참조하도록
+    const onMapIdleRef = useRef(onMapIdle);
+    useEffect(() => {
+        onMapIdleRef.current = onMapIdle;
+    }, [onMapIdle]);
 
     const { isLoaded } = useNaverMap();
     const [isMapReady, setIsMapReady] = useState(false);
@@ -45,21 +49,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 내 위치에서 다시 찾기
     const handleRefreshClick = useCallback(() => {
-        if (!mapInstanceRef.current || !('geolocation' in navigator)) {
-            onRefreshLocation();
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                mapInstanceRef.current?.setCenter(
-                    new window.naver.maps.LatLng(position.coords.latitude, position.coords.longitude)
-                );
-                onRefreshLocation();
-            },
-            () => onRefreshLocation(),
-            GEOLOCATION_OPTIONS
-        );
+        onRefreshLocation();
     }, [onRefreshLocation]);
 
     // 지도 bounds 정보 추출
@@ -105,9 +95,9 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
                 setIsMapReady(true);
                 setSelectedCluster(null);
 
-                if (onMapIdle) {
+                if (onMapIdleRef.current) {
                     const info = extractMapInfo(map);
-                    onMapIdle(info.center, info.bounds, info.zoom);
+                    onMapIdleRef.current(info.center, info.bounds, info.zoom);
                 }
             };
 
@@ -123,7 +113,8 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         } catch {
             // 지도 초기화 실패
         }
-    }, [isLoaded, userLocation, onMapIdle, extractMapInfo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoaded, extractMapInfo]);
 
     // Cleanup
     useEffect(() => {
@@ -150,9 +141,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
             zIndex: 1000,
         });
 
-        if (isInitialMoveRef.current) {
-            mapInstanceRef.current.setCenter(new window.naver.maps.LatLng(userLocation.lat, userLocation.lng));
-        }
+        mapInstanceRef.current.setCenter(new window.naver.maps.LatLng(userLocation.lat, userLocation.lng));
     }, [isMapReady, userLocation]);
 
     // 장소 클러스터링
@@ -294,6 +283,16 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         <div className="relative w-full h-full">
             <div ref={mapRef} className="w-full h-full" style={{ minHeight: '400px' }} />
 
+            {/* 로딩 인디케이터 */}
+            {isLoading && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+                    <div className="glass px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+                        <span className="text-xs font-medium text-gray-700">검색중...</span>
+                    </div>
+                </div>
+            )}
+
             {/* 범례 */}
             <div className="absolute top-4 left-4 glass rounded-2xl p-4 text-xs z-10 shadow-lg">
                 <div className="space-y-2">
@@ -312,14 +311,28 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
                 </div>
             </div>
 
-            {/* 내 위치에서 다시 찾기 버튼 */}
-            <button
-                onClick={handleRefreshClick}
-                className="absolute bottom-24 left-1/2 -translate-x-1/2 glass px-6 py-3.5 rounded-full shadow-xl border-2 border-white/50 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all duration-300 z-10 group"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" height="19px" viewBox="0 -960 960 960" width="19px" fill="#3b82f6"><path d="M536.5-503.5Q560-527 560-560t-23.5-56.5Q513-640 480-640t-56.5 23.5Q400-593 400-560t23.5 56.5Q447-480 480-480t56.5-23.5ZM480-186q122-112 181-203.5T720-552q0-109-69.5-178.5T480-800q-101 0-170.5 69.5T240-552q0 71 59 162.5T480-186Zm0 106Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 100-79.5 217.5T480-80Zm0-480Z" /></svg>
-                <span className="text-sm font-bold text-gray-800">내 위치에서 다시 찾기</span>
-            </button>
+            {/* 하단 버튼 영역 */}
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+                {/* 내 위치에서 다시 찾기 버튼 */}
+                <button
+                    onClick={handleRefreshClick}
+                    className="glass px-5 py-3 rounded-full shadow-xl border-2 border-white/50 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all duration-300 whitespace-nowrap"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#3b82f6" className="flex-shrink-0"><path d="M536.5-503.5Q560-527 560-560t-23.5-56.5Q513-640 480-640t-56.5 23.5Q400-593 400-560t23.5 56.5Q447-480 480-480t56.5-23.5ZM480-186q122-112 181-203.5T720-552q0-109-69.5-178.5T480-800q-101 0-170.5 69.5T240-552q0 71 59 162.5T480-186Zm0 106Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 100-79.5 217.5T480-80Zm0-480Z" /></svg>
+                    <span className="text-xs font-bold text-gray-800">내 위치</span>
+                </button>
+
+                {/* 현재 지도 위치에서 재검색 버튼 */}
+                {onRefreshSearch && (
+                    <button
+                        onClick={onRefreshSearch}
+                        className="glass px-5 py-3 rounded-full shadow-xl border-2 border-emerald-200 flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all duration-300 whitespace-nowrap"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#10b981" className="flex-shrink-0"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 178t-196 72Z" /></svg>
+                        <span className="text-xs font-bold text-gray-800">재검색</span>
+                    </button>
+                )}
+            </div>
 
             {selectedCluster && (
                 <MarkerClusterPopup

@@ -10,17 +10,18 @@ import { useEffect } from 'react';
 export default function HomePage() {
     const {
         userLocation,
-        places,
         filteredPlaces,
         selectedPlace,
         setSelectedPlace,
         filter,
         setFilter,
+        department,
+        setDepartment,
         isLoading,
         isDetailLoading,
-        error,
         handleMapIdle,
         handleRefreshLocation,
+        handleRefreshSearch,
         handlePlaceClick
     } = usePlaces();
 
@@ -39,9 +40,8 @@ export default function HomePage() {
                 <Header
                     filter={filter}
                     setFilter={setFilter}
-                    places={places}
-                    error={error}
-                    isLoading={isLoading}
+                    department={department}
+                    setDepartment={setDepartment}
                 />
 
                 {/* 지도 */}
@@ -51,7 +51,9 @@ export default function HomePage() {
                         places={filteredPlaces}
                         onPlaceClick={handlePlaceClick}
                         onRefreshLocation={handleRefreshLocation}
+                        onRefreshSearch={handleRefreshSearch}
                         onMapIdle={handleMapIdle}
+                        isLoading={isLoading}
                     />
                 </div>
 

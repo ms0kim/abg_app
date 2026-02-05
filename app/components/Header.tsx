@@ -1,27 +1,31 @@
-import { FilterType, Place } from '../types';
+import { FilterType, MedicalDepartment, DEPARTMENT_NAMES } from '../types';
 
 interface HeaderProps {
     filter: FilterType;
     setFilter: (filter: FilterType) => void;
-    places: Place[];
-    error: string | null;
-    isLoading: boolean;
+    department: MedicalDepartment;
+    setDepartment: (dept: MedicalDepartment) => void;
 }
 
-export function Header({ filter, setFilter, places, error, isLoading }: HeaderProps) {
+const POPULAR_DEPARTMENTS: MedicalDepartment[] = [
+    'all', 'D001', 'D008', 'D013', 'D012', 'D005', 'D002', 'D026', 'D011', 'D014'
+];
+
+export function Header({ filter, setFilter, department, setDepartment }: HeaderProps) {
+
     return (
         <header className="relative bg-white shadow-md z-20">
             <div className="relative px-4 py-4">
-                <h1 className="text-2xl font-bold text-gray-900 mb-1 tracking-tight flex items-center gap-2">
+                <h1 className="text-2xl font-extrabold text-gray-900 mb-1 tracking-tight flex items-center gap-1.5">
                     {/* 메인 아이콘 */}
-                    <svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 -960 960 960" width="28px" fill="#3b82f6"><path d="M444-408h72v-108h108v-72H516v-108h-72v108H336v72h108v108Zm36 312Q323.03-227.11 245.51-339.55 168-452 168-549q0-134 89-224.5T479.5-864q133.5 0 223 90.5T792-549q0 97-77 209T480-96Z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" height="30px" viewBox="0 -960 960 960" width="30px" fill="#3b82f6"><path d="M444-408h72v-108h108v-72H516v-108h-72v108H336v72h108v108Zm36 312Q323.03-227.11 245.51-339.55 168-452 168-549q0-134 89-224.5T479.5-864q133.5 0 223 90.5T792-549q0 97-77 209T480-96Z" /></svg>
                     아프면 바로가
                 </h1>
                 <p className="text-sm text-gray-600">지금 바로 갈 수 있는 병원과 약국이에요</p>
             </div>
 
             {/* 필터 버튼 */}
-            <div className="relative px-4 pb-4 flex gap-2">
+            <div className="relative px-4 pb-3 flex gap-2">
                 <button
                     onClick={() => setFilter('all')}
                     className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 transform hover:scale-105 active:scale-95 ${filter === 'all'
@@ -46,7 +50,7 @@ export function Header({ filter, setFilter, places, error, isLoading }: HeaderPr
                     </span>
                 </button>
                 <button
-                    onClick={() => setFilter('pharmacy')}
+                    onClick={() => { setFilter('pharmacy'); setDepartment('all'); }}
                     className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 transform hover:scale-105 active:scale-95 ${filter === 'pharmacy'
                         ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -59,34 +63,28 @@ export function Header({ filter, setFilter, places, error, isLoading }: HeaderPr
                 </button>
             </div>
 
-            {/* 에러 메시지 */}
-            {error && (
+            {/* 진료과목 필터 (병원 선택 시 슬라이드, 레이아웃 시프트 방지) */}
+            <div
+                className={`overflow-hidden transition-all duration-200 ease-in-out ${filter === 'hospital' ? 'max-h-12 opacity-100' : 'max-h-0 opacity-0'
+                    }`}
+            >
                 <div className="relative px-4 pb-3">
-                    <div className="bg-amber-50 border-l-4 border-amber-400 rounded-lg p-3 shadow-sm">
-                        <div className="flex items-center gap-2">
-                            <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                            </svg>
-                            <p className="text-sm text-amber-800 font-medium">{error}</p>
-                        </div>
+                    <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                        {POPULAR_DEPARTMENTS.map((dept) => (
+                            <button
+                                key={dept}
+                                onClick={() => setDepartment(dept)}
+                                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${department === dept
+                                    ? 'bg-rose-100 text-rose-600 border border-rose-200'
+                                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                                    }`}
+                            >
+                                {DEPARTMENT_NAMES[dept]}
+                            </button>
+                        ))}
                     </div>
                 </div>
-            )}
-
-            {/* 로딩 인디케이터 */}
-            {isLoading && (
-                <div className="relative px-4 pb-3">
-                    <div className="bg-blue-50 border-l-4 border-blue-400 rounded-lg p-3 shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <div className="relative">
-                                <div className="animate-spin rounded-full h-5 w-5 border-3 border-blue-600 border-t-transparent" />
-                                <div className="absolute inset-0 rounded-full bg-blue-400/20 animate-pulse-glow" />
-                            </div>
-                            <p className="text-sm text-blue-800 font-medium">주변 병원과 약국을 검색하는 중...</p>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </div>
         </header>
     );
 }

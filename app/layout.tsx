@@ -49,8 +49,11 @@ export default function RootLayout({
           rel="apple-touch-startup-image"
           href="/icons/icon-512x512.png"
         />
-        {/* iOS 상태바 스타일 */}
+        {/* iOS 상태바 스타일 - 흰색 배경 */}
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        {/* 추가 theme-color for iOS Safari */}
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: dark)" />
         <Script
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9760563871632268"

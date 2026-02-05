@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useCallback } from 'react';
 import { Place, OpenStatus } from '../types';
 import { calculateOpenStatus } from '../utils/realtimeStatus';
 
@@ -37,6 +38,27 @@ function getStatusDisplay(openStatus: OpenStatus): { text: string; bgClass: stri
 }
 
 export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetProps) {
+    // 바텀시트가 열릴 때 배경 터치/스크롤 방지
+    useEffect(() => {
+        if (place) {
+            document.body.classList.add('bottomsheet-open');
+            // 배경 터치 이벤트 방지
+            const preventTouch = (e: TouchEvent) => {
+                const target = e.target as HTMLElement;
+                // 바텀시트 내부는 스크롤 허용
+                if (!target.closest('.bottomsheet-content')) {
+                    e.preventDefault();
+                }
+            };
+            document.addEventListener('touchmove', preventTouch, { passive: false });
+
+            return () => {
+                document.body.classList.remove('bottomsheet-open');
+                document.removeEventListener('touchmove', preventTouch);
+            };
+        }
+    }, [place]);
+
     if (!place) return null;
 
     // 실시간 영업 상태 계산
@@ -78,7 +100,7 @@ export function BottomSheet({ place, onClose, isLoading = false }: BottomSheetPr
             />
 
             {/* 바텀시트 */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1001] animate-slideUp max-h-[90vh] overflow-y-auto pb-safe">
+            <div className="bottomsheet-content fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1001] animate-slideUp max-h-[90vh] overflow-y-auto pb-safe">
                 {/* 핸들 */}
                 <div className="flex justify-center pt-4 pb-2">
                     <div className="w-12 h-1.5 bg-gray-300 rounded-full" />

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { Place, OpenStatus } from '../types';
 import { calculateOpenStatus } from '../utils/realtimeStatus';
 
@@ -49,13 +50,50 @@ function getRealtimeStatus(place: Place) {
 }
 
 export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: MarkerClusterPopupProps) {
+    const popupRef = useRef<HTMLDivElement>(null);
+    const [adjustedPosition, setAdjustedPosition] = useState(position);
+
+    // 팝업이 화면 밖으로 나가지 않도록 위치 조정
+    useEffect(() => {
+        if (!popupRef.current) return;
+
+        const popup = popupRef.current;
+        const rect = popup.getBoundingClientRect();
+        const padding = 16; // 화면 가장자리와의 최소 간격
+
+        let newX = position.x;
+        let newY = position.y;
+
+        // 좌우 조정
+        if (rect.left < padding) {
+            newX = position.x + (padding - rect.left);
+        } else if (rect.right > window.innerWidth - padding) {
+            newX = position.x - (rect.right - window.innerWidth + padding);
+        }
+
+        // 상하 조정 (팝업이 위에 표시되므로 상단 체크)
+        if (rect.top < padding) {
+            // 위에 공간이 없으면 아래에 표시
+            newY = position.y + rect.height + 70; // 마커 높이 + 여백
+        }
+
+        if (newX !== position.x || newY !== position.y) {
+            setAdjustedPosition({ x: newX, y: newY });
+        }
+    }, [position]);
+
     return (
         <>
-            <div className="fixed inset-0 bg-black/20 z-30" onClick={onClose} />
+            <div className="fixed inset-0 bg-black/20 z-[100]" onClick={onClose} />
 
             <div
-                className="absolute z-40 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl max-w-sm w-80 max-h-96 overflow-hidden border border-gray-200/50"
-                style={{ left: `${position.x}px`, top: `${position.y}px`, transform: 'translate(-50%, -100%) translateY(-60px)' }}
+                ref={popupRef}
+                className="absolute z-[110] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl max-w-sm w-80 border border-gray-200/50 overflow-hidden"
+                style={{
+                    left: `${adjustedPosition.x}px`,
+                    top: `${adjustedPosition.y}px`,
+                    transform: 'translate(-50%, -100%) translateY(-60px)',
+                }}
             >
                 {/* 헤더 */}
                 <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
@@ -75,8 +113,14 @@ export function MarkerClusterPopup({ places, onPlaceClick, onClose, position }: 
                     </button>
                 </div>
 
-                {/* 장소 목록 */}
-                <div className="overflow-y-auto max-h-80">
+                {/* 장소 목록 - 항상 스크롤 가능 */}
+                <div
+                    className="overflow-y-auto"
+                    style={{
+                        maxHeight: '50vh',
+                        overflowX: 'hidden',
+                    }}
+                >
                     {places.map((place, index) => {
                         const isHospital = place.type === 'hospital';
                         const { isOpen, openStatus } = getRealtimeStatus(place);

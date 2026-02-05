@@ -200,7 +200,8 @@ function getStatusAndTimeRaw(startTime?: string | number, endTime?: string | num
 async function fetchHospitalsByAddress(
     sido: string,
     sigungu: string,
-    numOfRows: number
+    numOfRows: number,
+    departmentCode?: string
 ): Promise<HospitalListApiItem[]> {
     if (!SERVICE_KEY) {
         console.error('공공데이터 API 서비스 키가 설정되지 않았습니다.');
@@ -210,13 +211,17 @@ async function fetchHospitalsByAddress(
     const url = new URL(HOSPITAL_LIST_API);
     url.searchParams.set('Q0', sido);
     url.searchParams.set('Q1', sigungu);
+    // 진료과목 코드가 있으면 추가
+    if (departmentCode) {
+        url.searchParams.set('QD', departmentCode);
+    }
     // QZ 파라미터는 아래에서 개별 설정
     url.searchParams.set('numOfRows', String(numOfRows));
     url.searchParams.set('pageNo', '1');
 
     const baseUrl = url.toString();
 
-    console.log(`Fetching hospitals: ${sido} ${sigungu}`);
+    console.log(`Fetching hospitals: ${sido} ${sigungu}${departmentCode ? ` (과목: ${departmentCode})` : ''}`);
 
     try {
         // 병원(B)과 의원(C) 병렬 조회
@@ -305,6 +310,7 @@ export async function GET(request: NextRequest) {
         const lng = parseFloat(searchParams.get('lng') || '');
         // 시/군/구 단위 검색이므로 충분한 데이터를 가져오기 위해 기본값을 500으로 설정
         const numOfRows = parseInt(searchParams.get('numOfRows') || '500', 10);
+        const departmentCode = searchParams.get('QD') || undefined; // 진료과목 코드
 
         if (isNaN(lat) || isNaN(lng)) {
             return NextResponse.json(
@@ -313,8 +319,10 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // 캐시 키 생성 (소수점 2자리 = 약 1km 범위)
-        const cacheKey = MemoryCache.createLocationKey(lat, lng, 2);
+        // 캐시 키 생성 (소수점 2자리 = 약 1km 범위, 진료과목 포함)
+        const cacheKey = departmentCode
+            ? `${MemoryCache.createLocationKey(lat, lng, 2)}_${departmentCode}`
+            : MemoryCache.createLocationKey(lat, lng, 2);
         const cachedData = hospitalListCache.get(cacheKey) as PlaceResponse[] | null;
 
         if (cachedData) {
@@ -338,9 +346,9 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        console.log(`[CACHE MISS] Fetching hospitals: ${address.sido} ${address.sigungu}`);
+        console.log(`[CACHE MISS] Fetching hospitals: ${address.sido} ${address.sigungu}${departmentCode ? ` (과목: ${departmentCode})` : ''}`);
 
-        const hospitals = await fetchHospitalsByAddress(address.sido, address.sigungu, numOfRows);
+        const hospitals = await fetchHospitalsByAddress(address.sido, address.sigungu, numOfRows, departmentCode);
         console.log(`API returned ${hospitals.length} hospitals`);
 
         const places = hospitals

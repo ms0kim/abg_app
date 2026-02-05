@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Place, Location, MapBounds, FilterType } from '../types';
+import { Place, Location, MapBounds, FilterType, MedicalDepartment } from '../types';
 
 // 위치 요청 옵션
 const GEOLOCATION_OPTIONS = {
@@ -37,14 +37,13 @@ function shouldRefetch(prev: MapBounds | null, next: MapBounds): boolean {
     return movedLat > prevHeight * MIN_MOVE_THRESHOLD || movedLng > prevWidth * MIN_MOVE_THRESHOLD;
 }
 
-
-
 export function usePlaces() {
     const [userLocation, setUserLocation] = useState<Location | null>(null);
     const [places, setPlaces] = useState<Place[]>([]);
     const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
     const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
     const [filter, setFilter] = useState<FilterType>('all');
+    const [department, setDepartment] = useState<MedicalDepartment>('all');
     const [isLoading, setIsLoading] = useState(false);
     const [isDetailLoading, setIsDetailLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -52,8 +51,11 @@ export function usePlaces() {
 
     // 최적화용 refs
     const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
+    const lastFetchedDepartmentRef = useRef<MedicalDepartment>('all');
     const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const lastCenterRef = useRef<Location | null>(null);
+    const lastZoomRef = useRef<number>(16);
 
     // 장소가 bounds 내에 있는지 확인
     const isWithinBounds = useCallback((place: Place, bounds: MapBounds): boolean => {
@@ -66,7 +68,7 @@ export function usePlaces() {
     }, []);
 
     // 병원과 약국 데이터 가져오기
-    const fetchPlaces = useCallback(async (center: Location, bounds: MapBounds, zoom?: number) => {
+    const fetchPlaces = useCallback(async (center: Location, bounds: MapBounds, zoom?: number, dept?: MedicalDepartment) => {
         // 이전 요청 취소
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
@@ -78,11 +80,16 @@ export function usePlaces() {
 
         // 줌 레벨에 따라 검색 개수 조정 (기본적으로 많이 가져오도록 설정)
         const numOfRows = 500;
+        const currentDept = dept !== undefined ? dept : department;
 
         try {
             // 병원과 약국을 병렬로 조회
+            const hospitalUrl = currentDept !== 'all'
+                ? `/api/hospitals?lat=${center.lat}&lng=${center.lng}&numOfRows=${numOfRows}&QD=${currentDept}`
+                : `/api/hospitals?lat=${center.lat}&lng=${center.lng}&numOfRows=${numOfRows}`;
+
             const [hospitalsRes, pharmaciesRes] = await Promise.all([
-                fetch(`/api/hospitals?lat=${center.lat}&lng=${center.lng}&numOfRows=${numOfRows}`, {
+                fetch(hospitalUrl, {
                     signal: abortControllerRef.current.signal
                 }),
                 fetch(`/api/pharmacies?lat=${center.lat}&lng=${center.lng}&numOfRows=${numOfRows}`, {
@@ -99,9 +106,11 @@ export function usePlaces() {
             const pharmacies: Place[] = pharmaciesData.success ? pharmaciesData.data : [];
 
             // API에서 이미 지역 기반으로 데이터를 가져오므로 클라이언트에서 bounds로 필터링하지 않음
-            // (행정구역 단위 검색이므로 화면 밖의 데이터도 포함될 수 있으나, 미리 보여주는 것이 UX상 좋음)
             setPlaces([...hospitals, ...pharmacies]);
             lastFetchedBoundsRef.current = bounds;
+            lastFetchedDepartmentRef.current = currentDept;
+            lastCenterRef.current = center;
+            lastZoomRef.current = zoom || 16;
         } catch (err) {
             // 취소된 요청은 에러로 처리하지 않음
             if (err instanceof Error && err.name === 'AbortError') {
@@ -111,9 +120,9 @@ export function usePlaces() {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [department]);
 
-    // Geolocation Promise 래퍼 함수 (컴포넌트 밖이나 안에 정의)
+    // Geolocation Promise 래퍼 함수
     const getPosition = (options?: PositionOptions): Promise<GeolocationPosition> => {
         return new Promise((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, options);
@@ -121,7 +130,7 @@ export function usePlaces() {
     };
 
     useEffect(() => {
-        let isMounted = true; // 컴포넌트 마운트 상태 추적
+        let isMounted = true;
 
         const initLocation = async () => {
             if (!('geolocation' in navigator)) {
@@ -134,7 +143,6 @@ export function usePlaces() {
 
             try {
                 // 1단계: 빠른 위치 시도 (캐시된 위치가 있으면 즉시 반환)
-                // 타임아웃을 짧게 주어 캐시가 없으면 바로 에러를 내고 다음 단계로 넘어가게 함
                 try {
                     const fastPos = await getPosition({ ...GEOLOCATION_OPTIONS.fast, timeout: 1000 });
                     if (isMounted) {
@@ -142,16 +150,12 @@ export function usePlaces() {
                             lat: fastPos.coords.latitude,
                             lng: fastPos.coords.longitude
                         });
-                        // 빠른 위치를 잡았더라도 로딩을 끄지 않고 정밀 위치를 계속 시도할지,
-                        // 아니면 여기서 일단 로딩을 끌지 결정 (UX 선택).
-                        // 보통 지도가 이동해야 하므로 로딩을 유지하거나, 사용자에게 대략적 위치를 먼저 보여줍니다.
                     }
-                } catch (e) {
+                } catch {
                     // 빠른 위치 실패 시 무시하고 정밀 위치 진행
                 }
 
                 // 2단계: 정밀 위치 요청 (실제 GPS)
-                // 앞선 단계에서 위치를 잡았더라도, 더 정확한 위치로 보정합니다.
                 const accuratePos = await getPosition(GEOLOCATION_OPTIONS.accurate);
 
                 if (isMounted) {
@@ -159,23 +163,20 @@ export function usePlaces() {
                         lat: accuratePos.coords.latitude,
                         lng: accuratePos.coords.longitude
                     });
-                    setIsLoading(false); // 최종 완료 시 로딩 해제
+                    setIsLoading(false);
                 }
 
-            } catch (err: any) {
-                // 정밀 위치까지 실패했을 경우
+            } catch (err: unknown) {
                 if (isMounted) {
-                    // 이미 1단계에서 위치를 잡았다면 에러 처리 하지 않음
-                    if (!userLocation) {
-                        setUserLocation(DEFAULT_LOCATION);
+                    setUserLocation(DEFAULT_LOCATION);
 
-                        const messages: Record<number, string> = {
-                            1: '위치 권한이 거부되었습니다.', // PERMISSION_DENIED
-                            2: '위치 정보를 사용할 수 없습니다.', // POSITION_UNAVAILABLE
-                            3: '위치 요청 시간이 초과되었습니다.', // TIMEOUT
-                        };
-                        setError(messages[err.code] || '위치 정보를 가져올 수 없습니다.');
-                    }
+                    const geoError = err as GeolocationPositionError;
+                    const messages: Record<number, string> = {
+                        1: '위치 권한이 거부되었습니다.',
+                        2: '위치 정보를 사용할 수 없습니다.',
+                        3: '위치 요청 시간이 초과되었습니다.',
+                    };
+                    setError(messages[geoError.code] || '위치 정보를 가져올 수 없습니다.');
                     setIsLoading(false);
                 }
             }
@@ -184,13 +185,13 @@ export function usePlaces() {
         initLocation();
 
         return () => {
-            isMounted = false; // 클린업
+            isMounted = false;
         };
     }, []);
 
     // 필터 적용 (엄격한 Viewport 필터링)
     useEffect(() => {
-        if (!currentBounds) return; // 아직 지도가 준비되지 않았으면 필터링 보류
+        if (!currentBounds) return;
 
         let result = places.filter((place) => isWithinBounds(place, currentBounds));
 
@@ -201,10 +202,24 @@ export function usePlaces() {
         setFilteredPlaces(result);
     }, [places, filter, currentBounds, isWithinBounds]);
 
+    // 진료과목 변경 핸들러 (즉시 재검색)
+    const handleDepartmentChange = useCallback((dept: MedicalDepartment) => {
+        setDepartment(dept);
+        // 같은 과목이면 재검색 불필요
+        if (dept === lastFetchedDepartmentRef.current) return;
+        const center = lastCenterRef.current;
+        const bounds = currentBounds || lastFetchedBoundsRef.current;
+        if (center && bounds) {
+            fetchPlaces(center, bounds, lastZoomRef.current, dept);
+        }
+    }, [fetchPlaces, currentBounds]);
+
     // 지도 이동 시 실시간 검색 (debounce + 최적화)
     const handleMapIdle = useCallback(
         (center: Location, bounds: MapBounds, zoom: number) => {
             setCurrentBounds(bounds);
+            lastCenterRef.current = center;
+            lastZoomRef.current = zoom;
 
             // 기존 타이머 취소
             if (debounceTimerRef.current) {
@@ -216,13 +231,38 @@ export function usePlaces() {
                 return;
             }
 
-            // debounce 적용
+            // debounce 적용 - 현재 department 상태를 명시적으로 전달
             debounceTimerRef.current = setTimeout(() => {
-                fetchPlaces(center, bounds, zoom);
+                fetchPlaces(center, bounds, zoom, department);
             }, DEBOUNCE_MS);
         },
-        [fetchPlaces]
+        [fetchPlaces, department]
     );
+
+    // 현재 위치에서 다시 검색 (지도 이동 없이)
+    const handleRefreshSearch = useCallback(() => {
+        const center = lastCenterRef.current;
+        const bounds = currentBounds;
+
+        if (!center) {
+            // center가 없으면 userLocation 사용
+            if (userLocation) {
+                const defaultBounds: MapBounds = {
+                    sw: { lat: userLocation.lat - 0.01, lng: userLocation.lng - 0.01 },
+                    ne: { lat: userLocation.lat + 0.01, lng: userLocation.lng + 0.01 }
+                };
+                lastFetchedBoundsRef.current = null;
+                fetchPlaces(userLocation, defaultBounds, lastZoomRef.current, department);
+            }
+            return;
+        }
+
+        if (bounds) {
+            // 캐시 초기화하여 강제 재검색
+            lastFetchedBoundsRef.current = null;
+            fetchPlaces(center, bounds, lastZoomRef.current, department);
+        }
+    }, [fetchPlaces, currentBounds, userLocation, department]);
 
     // 내 위치에서 다시 찾기
     const handleRefreshLocation = useCallback(() => {
@@ -230,12 +270,12 @@ export function usePlaces() {
 
         setIsLoading(true);
         setError(null);
-        // 캐시 초기화
-        lastFetchedBoundsRef.current = null;
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const location = { lat: position.coords.latitude, lng: position.coords.longitude };
+                // 캐시 초기화 - 위치 획득 후에 초기화하여 race condition 방지
+                lastFetchedBoundsRef.current = null;
                 setUserLocation(location);
             },
             (err) => {
@@ -296,11 +336,14 @@ export function usePlaces() {
         setSelectedPlace,
         filter,
         setFilter,
+        department,
+        setDepartment: handleDepartmentChange,
         isLoading,
         isDetailLoading,
         error,
         handleMapIdle,
         handleRefreshLocation,
+        handleRefreshSearch,
         handlePlaceClick,
     };
 }
