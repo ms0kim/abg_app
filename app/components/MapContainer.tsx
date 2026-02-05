@@ -92,28 +92,26 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
             // 지도 로드 완료 및 이동 이벤트 통합 처리
             const handleIdle = () => {
-                setIsMapReady(true);
                 setSelectedCluster(null);
-
-                if (onMapIdleRef.current) {
-                    const info = extractMapInfo(map);
+                if (onMapIdleRef.current && mapInstanceRef.current) {
+                    const info = extractMapInfo(mapInstanceRef.current);
                     onMapIdleRef.current(info.center, info.bounds, info.zoom);
                 }
             };
 
-            // 최초 로드 시 한 번 실행
-            const initListener = window.naver.maps.Event.addListener(map, 'idle', () => {
-                handleIdle();
-                window.naver.maps.Event.removeListener(initListener);
+            // 즉시 ready 상태로 설정하여 마커 등이 그려질 수 있게 함
+            setIsMapReady(true);
 
-                // 이후 이동에 대해 지속적 리스너 등록
-                idleListenerRef.current = window.naver.maps.Event.addListener(map, 'idle', handleIdle);
-            });
+            // 초기 위치에 대한 정보 전달 (idle 이벤트가 늦게 발생할 수 있으므로 선제적 호출)
+            handleIdle();
 
-        } catch {
-            // 지도 초기화 실패
+            // 이후 이동에 대해 지속적 리스너 등록
+            idleListenerRef.current = window.naver.maps.Event.addListener(map, 'idle', handleIdle);
+
+        } catch (e) {
+            console.error('지도 초기화 실패:', e);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLoaded, extractMapInfo]);
 
     // Cleanup

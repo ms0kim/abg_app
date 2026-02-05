@@ -33,8 +33,8 @@ function shouldRefetch(prev: MapBounds | null, next: MapBounds): boolean {
     const movedLat = Math.abs(nextCenterLat - prevCenterLat);
     const movedLng = Math.abs(nextCenterLng - prevCenterLng);
 
-    // 이동 거리가 bounds의 30% 이상이면 재검색
-    return movedLat > prevHeight * MIN_MOVE_THRESHOLD || movedLng > prevWidth * MIN_MOVE_THRESHOLD;
+    // 이동 거리가 bounds의 10% 이상이면 재검색 (초기 감지 안정성을 위해 문턱값 유지)
+    return movedLat > prevHeight * 0.05 || movedLng > prevWidth * 0.05;
 }
 
 export function usePlaces() {
