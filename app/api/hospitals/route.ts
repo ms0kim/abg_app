@@ -216,38 +216,50 @@ async function fetchHospitalsByAddress(
     const url = new URL(HOSPITAL_LIST_API);
     url.searchParams.set('Q0', sido);
     url.searchParams.set('Q1', sigungu);
-    // 진료과목 코드가 있으면 추가
-    if (departmentCode) {
-        url.searchParams.set('QD', departmentCode);
-    }
-    // QZ 파라미터는 아래에서 개별 설정
     url.searchParams.set('numOfRows', String(numOfRows));
     url.searchParams.set('pageNo', '1');
-
-    const baseUrl = url.toString();
 
     console.log(`Fetching hospitals: ${sido} ${sigungu}${departmentCode ? ` (과목: ${departmentCode})` : ''}`);
 
     try {
         // 서비스 키는 이미 인코딩되어 있다고 가정하고 수동으로 붙임 (URL 객체 사용 시 이중 인코딩 주의)
-        const getUrl = (type?: string) => {
-            const u = new URL(baseUrl);
+        const getUrl = (type?: string, deptCode?: string) => {
+            const u = new URL(url.toString());
             if (type) {
                 u.searchParams.set('QZ', type);
+            }
+            if (deptCode) {
+                u.searchParams.set('QD', deptCode);
             }
             return `${u.toString()}&ServiceKey=${SERVICE_KEY}`;
         };
 
-        // 치과 진료과목 선택 시: QZ 없이 QD=D026으로만 조회 (치과의원/치과병원 모두 검색됨)
+        // 치과 선택 시: QD 없이 QZ=M(치과병원), QZ=N(치과의원)만으로 조회
         if (departmentCode === DENTAL_DEPARTMENT_CODE) {
-            return fetchHospitalList(getUrl()); // QZ 파라미터 없이 조회
+            const [hospitalsM, hospitalsN] = await Promise.all([
+                fetchHospitalList(getUrl('M')), // 치과병원 (QD 없이)
+                fetchHospitalList(getUrl('N')), // 치과의원 (QD 없이)
+            ]);
+            return [...hospitalsM, ...hospitalsN];
         }
 
-        // 일반 진료과목: 종합병원(A), 병원(B), 의원(C) 조회
+        // 전체 검색 (departmentCode 없음): 종합병원(A), 병원(B), 의원(C), 치과병원(M), 치과의원(N) 모두 조회
+        if (!departmentCode) {
+            const [hospitalsA, hospitalsB, hospitalsC, hospitalsM, hospitalsN] = await Promise.all([
+                fetchHospitalList(getUrl('A')), // 종합병원
+                fetchHospitalList(getUrl('B')), // 병원
+                fetchHospitalList(getUrl('C')), // 의원
+                fetchHospitalList(getUrl('M')), // 치과병원
+                fetchHospitalList(getUrl('N')), // 치과의원
+            ]);
+            return [...hospitalsA, ...hospitalsB, ...hospitalsC, ...hospitalsM, ...hospitalsN];
+        }
+
+        // 특정 진료과목 선택 시: 일반 병의원(A,B,C)에서 해당 진료과목 조회
         const [hospitalsA, hospitalsB, hospitalsC] = await Promise.all([
-            fetchHospitalList(getUrl('A')), // 종합병원
-            fetchHospitalList(getUrl('B')), // 병원
-            fetchHospitalList(getUrl('C')), // 의원
+            fetchHospitalList(getUrl('A', departmentCode)), // 종합병원 + 진료과목
+            fetchHospitalList(getUrl('B', departmentCode)), // 병원 + 진료과목
+            fetchHospitalList(getUrl('C', departmentCode)), // 의원 + 진료과목
         ]);
 
         return [...hospitalsA, ...hospitalsB, ...hospitalsC];
