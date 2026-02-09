@@ -27,6 +27,14 @@ export default function HomePage() {
     } = usePlaces();
 
     useEffect(() => {
+        // 지도 페이지 스크롤 방지
+        document.body.classList.add('map-page');
+        return () => {
+            document.body.classList.remove('map-page');
+        };
+    }, []);
+
+    useEffect(() => {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker
                 .register('/sw.js')

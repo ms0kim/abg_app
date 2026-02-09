@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
 import { FilterType, MedicalDepartment, DEPARTMENT_NAMES } from '../types';
 
 interface HeaderProps {
@@ -12,16 +16,73 @@ const POPULAR_DEPARTMENTS: MedicalDepartment[] = [
 ];
 
 export function Header({ filter, setFilter, department, setDepartment }: HeaderProps) {
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     return (
         <header className="relative bg-white shadow-md z-20">
             <div className="relative px-4 py-4">
-                <h1 className="text-2xl font-extrabold text-gray-900 mb-1 tracking-tight flex items-center gap-1.5">
-                    {/* 메인 아이콘 */}
-                    <svg xmlns="http://www.w3.org/2000/svg" height="30px" viewBox="0 -960 960 960" width="30px" fill="#3b82f6"><path d="M444-408h72v-108h108v-72H516v-108h-72v108H336v72h108v108Zm36 312Q323.03-227.11 245.51-339.55 168-452 168-549q0-134 89-224.5T479.5-864q133.5 0 223 90.5T792-549q0 97-77 209T480-96Z" /></svg>
-                    아프면 바로가
-                </h1>
-                <p className="text-sm text-gray-600">지금 바로 갈 수 있는 병원과 약국이에요</p>
+                <div className="flex items-start justify-between">
+                    <div>
+                        <h1 className="text-2xl font-extrabold text-gray-900 mb-1 tracking-tight flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="30px" viewBox="0 -960 960 960" width="30px" fill="#3b82f6"><path d="M444-408h72v-108h108v-72H516v-108h-72v108H336v72h108v108Zm36 312Q323.03-227.11 245.51-339.55 168-452 168-549q0-134 89-224.5T479.5-864q133.5 0 223 90.5T792-549q0 97-77 209T480-96Z" /></svg>
+                            아프면 바로가
+                        </h1>
+                        <p className="text-sm text-gray-600">지금 바로 갈 수 있는 병원과 약국이에요</p>
+                    </div>
+
+                    {/* 햄버거 메뉴 버튼 */}
+                    <button
+                        onClick={() => setIsMenuOpen(!isMenuOpen)}
+                        className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                        aria-label="메뉴"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#374151">
+                            <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z" />
+                        </svg>
+                    </button>
+                </div>
+
+                {/* 드롭다운 메뉴 */}
+                {isMenuOpen && (
+                    <>
+                        <div
+                            className="fixed inset-0 z-30"
+                            onClick={() => setIsMenuOpen(false)}
+                        />
+                        <div className="absolute right-4 top-14 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-40 min-w-[160px]">
+                            <Link
+                                href="/about"
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                onClick={() => setIsMenuOpen(false)}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#6b7280">
+                                    <path d="M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z" />
+                                </svg>
+                                서비스 소개
+                            </Link>
+                            <Link
+                                href="/privacy"
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                onClick={() => setIsMenuOpen(false)}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#6b7280">
+                                    <path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z" />
+                                </svg>
+                                개인정보처리방침
+                            </Link>
+                            <Link
+                                href="/terms"
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                onClick={() => setIsMenuOpen(false)}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#6b7280">
+                                    <path d="M320-240h320v-80H320v80Zm0-160h320v-80H320v80ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520Z" />
+                                </svg>
+                                이용약관
+                            </Link>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* 필터 버튼 */}
