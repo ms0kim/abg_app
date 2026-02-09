@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords, fetchWithPagination } from '@/app/utils/apiUtils';
 import { OpenStatus, BusinessTimeRaw } from '@/app/types';
-import { pharmacyListCache, MemoryCache } from '@/app/utils/cache';
+import { pharmacyListCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 const NAVER_CLIENT_ID = process.env.NEXT_PUBLIC_NAVER_CLIENT_ID || '';
@@ -207,7 +207,7 @@ async function fetchPharmaciesByAddress(
     console.log(`Fetching pharmacies: ${sido} ${sigungu}`);
 
     try {
-        return fetchWithPagination<PharmacyListApiItem>(finalUrl, numOfRows, 2000);
+        return fetchWithPagination<PharmacyListApiItem>(finalUrl, numOfRows, 300);
     } catch (error) {
         console.error('약국 API 호출 실패:', error);
         return [];
@@ -271,8 +271,8 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const lat = parseFloat(searchParams.get('lat') || '');
         const lng = parseFloat(searchParams.get('lng') || '');
-        // 시/군/구 단위 검색이므로 충분한 데이터를 가져오기 위해 기본값을 500으로 설정
-        const numOfRows = parseInt(searchParams.get('numOfRows') || '500', 10);
+        // 거리순 정렬되므로 가까운 곳 위주로 가져옴 (API 호출 최소화)
+        const numOfRows = parseInt(searchParams.get('numOfRows') || '150', 10);
 
         if (isNaN(lat) || isNaN(lng)) {
             return NextResponse.json(
@@ -281,21 +281,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // 캐시 키 생성 (소수점 2자리 = 약 1km 범위)
-        const cacheKey = MemoryCache.createLocationKey(lat, lng, 2);
-        const cachedData = pharmacyListCache.get(cacheKey) as PlaceResponse[] | null;
-
-        if (cachedData) {
-            console.log(`[CACHE HIT] Pharmacies at ${cacheKey}, ${cachedData.length} items`);
-            return NextResponse.json({
-                success: true,
-                count: cachedData.length,
-                cached: true,
-                data: cachedData,
-            });
-        }
-
-        // 좌표를 주소로 변환
+        // 좌표를 주소로 변환 (캐시 키 생성 전에 필요)
         const address = await reverseGeocode(lat, lng);
 
         if (!address) {
@@ -303,6 +289,26 @@ export async function GET(request: NextRequest) {
                 success: false,
                 error: '주소를 찾을 수 없습니다.',
                 data: [],
+            });
+        }
+
+        // 캐시 키 생성 (시/군/구 기반 - 같은 지역에서는 API 재호출 방지)
+        const cacheKey = `${address.sido}_${address.sigungu}`;
+        const cachedData = pharmacyListCache.get(cacheKey) as PlaceResponse[] | null;
+
+        if (cachedData) {
+            console.log(`[CACHE HIT] Pharmacies at ${cacheKey}, ${cachedData.length} items`);
+            // 캐시된 데이터도 현재 위치 기준으로 거리 재계산
+            const updatedData = cachedData.map(place => ({
+                ...place,
+                distance: calculateDistance(lat, lng, place.lat, place.lng)
+            }));
+            updatedData.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+            return NextResponse.json({
+                success: true,
+                count: updatedData.length,
+                cached: true,
+                data: updatedData,
             });
         }
 

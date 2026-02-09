@@ -67,11 +67,11 @@ class MemoryCache<T> {
     }
 }
 
-// 병원 목록 캐시 (60초 TTL)
-export const hospitalListCache = new MemoryCache<unknown[]>(60, 50);
+// 병원 목록 캐시 (5분 TTL - API 할당량 절약)
+export const hospitalListCache = new MemoryCache<unknown[]>(300, 50);
 
-// 약국 목록 캐시 (60초 TTL)
-export const pharmacyListCache = new MemoryCache<unknown[]>(60, 50);
+// 약국 목록 캐시 (5분 TTL - API 할당량 절약)
+export const pharmacyListCache = new MemoryCache<unknown[]>(300, 50);
 
 // 병원 상세 캐시 (5분 TTL)
 export const hospitalDetailCache = new MemoryCache<unknown>(300, 200);

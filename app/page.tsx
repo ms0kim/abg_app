@@ -19,6 +19,7 @@ export default function HomePage() {
         setDepartment,
         isLoading,
         isDetailLoading,
+        lastSearchCount,
         handleMapIdle,
         handleRefreshLocation,
         handleRefreshSearch,
@@ -54,6 +55,7 @@ export default function HomePage() {
                         onRefreshSearch={handleRefreshSearch}
                         onMapIdle={handleMapIdle}
                         isLoading={isLoading}
+                        lastSearchCount={lastSearchCount}
                     />
                 </div>
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithRetry, parseXmlResponse, removeDuplicatesByCoords, fetchWithPagination } from '@/app/utils/apiUtils';
 import { OpenStatus, BusinessTimeRaw } from '@/app/types';
-import { hospitalListCache, MemoryCache } from '@/app/utils/cache';
+import { hospitalListCache } from '@/app/utils/cache';
 
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || '';
 const NAVER_CLIENT_ID = process.env.NEXT_PUBLIC_NAVER_CLIENT_ID || '';
@@ -60,8 +60,13 @@ const CATEGORY_MAP: Record<string, string> = {
     B: '병원',
     C: '의원',
     D: '요양병원',
+    M: '치과병원',
+    N: '치과의원',
     I: '기타',
 };
+
+// 치과 진료과목 코드
+const DENTAL_DEPARTMENT_CODE = 'D026';
 
 /**
  * 좌표를 주소로 변환 (네이버 역지오코딩)
@@ -224,14 +229,21 @@ async function fetchHospitalsByAddress(
     console.log(`Fetching hospitals: ${sido} ${sigungu}${departmentCode ? ` (과목: ${departmentCode})` : ''}`);
 
     try {
-        // 병원(B)과 의원(C) 병렬 조회
         // 서비스 키는 이미 인코딩되어 있다고 가정하고 수동으로 붙임 (URL 객체 사용 시 이중 인코딩 주의)
-        const getUrl = (type: string) => {
+        const getUrl = (type?: string) => {
             const u = new URL(baseUrl);
-            u.searchParams.set('QZ', type);
+            if (type) {
+                u.searchParams.set('QZ', type);
+            }
             return `${u.toString()}&ServiceKey=${SERVICE_KEY}`;
         };
 
+        // 치과 진료과목 선택 시: QZ 없이 QD=D026으로만 조회 (치과의원/치과병원 모두 검색됨)
+        if (departmentCode === DENTAL_DEPARTMENT_CODE) {
+            return fetchHospitalList(getUrl()); // QZ 파라미터 없이 조회
+        }
+
+        // 일반 진료과목: 종합병원(A), 병원(B), 의원(C) 조회
         const [hospitalsA, hospitalsB, hospitalsC] = await Promise.all([
             fetchHospitalList(getUrl('A')), // 종합병원
             fetchHospitalList(getUrl('B')), // 병원
@@ -246,8 +258,8 @@ async function fetchHospitalsByAddress(
 }
 
 async function fetchHospitalList(url: string): Promise<HospitalListApiItem[]> {
-    // 500개씩, 최대 2000개 조회
-    return fetchWithPagination<HospitalListApiItem>(url, 500, 2000);
+    // 150개씩, 최대 300개 조회 (API 호출 최소화)
+    return fetchWithPagination<HospitalListApiItem>(url, 150, 300);
 }
 
 /**
@@ -308,8 +320,8 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const lat = parseFloat(searchParams.get('lat') || '');
         const lng = parseFloat(searchParams.get('lng') || '');
-        // 시/군/구 단위 검색이므로 충분한 데이터를 가져오기 위해 기본값을 500으로 설정
-        const numOfRows = parseInt(searchParams.get('numOfRows') || '500', 10);
+        // 거리순 정렬되므로 가까운 곳 위주로 가져옴 (API 호출 최소화)
+        const numOfRows = parseInt(searchParams.get('numOfRows') || '150', 10);
         const departmentCode = searchParams.get('QD') || undefined; // 진료과목 코드
 
         if (isNaN(lat) || isNaN(lng)) {
@@ -319,23 +331,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // 캐시 키 생성 (소수점 2자리 = 약 1km 범위, 진료과목 포함)
-        const cacheKey = departmentCode
-            ? `${MemoryCache.createLocationKey(lat, lng, 2)}_${departmentCode}`
-            : MemoryCache.createLocationKey(lat, lng, 2);
-        const cachedData = hospitalListCache.get(cacheKey) as PlaceResponse[] | null;
-
-        if (cachedData) {
-            console.log(`[CACHE HIT] Hospitals at ${cacheKey}, ${cachedData.length} items`);
-            return NextResponse.json({
-                success: true,
-                count: cachedData.length,
-                cached: true,
-                data: cachedData,
-            });
-        }
-
-        // 좌표를 주소로 변환
+        // 좌표를 주소로 변환 (캐시 키 생성 전에 필요)
         const address = await reverseGeocode(lat, lng);
 
         if (!address) {
@@ -343,6 +339,28 @@ export async function GET(request: NextRequest) {
                 success: false,
                 error: '주소를 찾을 수 없습니다.',
                 data: [],
+            });
+        }
+
+        // 캐시 키 생성 (시/군/구 기반 - 같은 지역에서는 API 재호출 방지)
+        const cacheKey = departmentCode
+            ? `${address.sido}_${address.sigungu}_${departmentCode}`
+            : `${address.sido}_${address.sigungu}`;
+        const cachedData = hospitalListCache.get(cacheKey) as PlaceResponse[] | null;
+
+        if (cachedData) {
+            console.log(`[CACHE HIT] Hospitals at ${cacheKey}, ${cachedData.length} items`);
+            // 캐시된 데이터도 현재 위치 기준으로 거리 재계산
+            const updatedData = cachedData.map(place => ({
+                ...place,
+                distance: calculateDistance(lat, lng, place.lat, place.lng)
+            }));
+            updatedData.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+            return NextResponse.json({
+                success: true,
+                count: updatedData.length,
+                cached: true,
+                data: updatedData,
             });
         }
 

@@ -10,9 +10,10 @@ const GEOLOCATION_OPTIONS = {
 // 기본 위치 (서울 시청)
 const DEFAULT_LOCATION: Location = { lat: 37.5665, lng: 126.978 };
 
-// 최적화 설정
-const DEBOUNCE_MS = 300; // 지도 이동 후 API 호출 대기 시간
-const MIN_MOVE_THRESHOLD = 0.1; // bounds 10% 이상 이동 시에만 재검색
+// 최적화 설정 (API 호출 최소화)
+const DEBOUNCE_MS = 500; // 지도 이동 후 API 호출 대기 시간
+const MIN_MOVE_THRESHOLD = 0.25; // bounds 25% 이상 이동 시에만 재검색 (API 호출 최소화)
+const NUM_OF_ROWS = 150; // API에서 가져올 최대 데이터 수 (거리순 정렬되므로 가까운 곳 위주)
 
 /**
  * 두 bounds가 충분히 다른지 확인 (최적화용)
@@ -33,8 +34,8 @@ function shouldRefetch(prev: MapBounds | null, next: MapBounds): boolean {
     const movedLat = Math.abs(nextCenterLat - prevCenterLat);
     const movedLng = Math.abs(nextCenterLng - prevCenterLng);
 
-    // 이동 거리가 bounds의 10% 이상이면 재검색 (초기 감지 안정성을 위해 문턱값 유지)
-    return movedLat > prevHeight * 0.05 || movedLng > prevWidth * 0.05;
+    // 이동 거리가 bounds의 15% 이상이면 재검색 (API 호출 최소화)
+    return movedLat > prevHeight * MIN_MOVE_THRESHOLD || movedLng > prevWidth * MIN_MOVE_THRESHOLD;
 }
 
 export function usePlaces() {
@@ -48,6 +49,7 @@ export function usePlaces() {
     const [isDetailLoading, setIsDetailLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [currentBounds, setCurrentBounds] = useState<MapBounds | null>(null);
+    const [lastSearchCount, setLastSearchCount] = useState<number | null>(null); // 마지막 검색 결과 개수
 
     // 최적화용 refs
     const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
@@ -56,6 +58,7 @@ export function usePlaces() {
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastCenterRef = useRef<Location | null>(null);
     const lastZoomRef = useRef<number>(16);
+    const initialSearchDoneRef = useRef<boolean>(false); // 초기 검색 완료 여부
 
     // 장소가 bounds 내에 있는지 확인
     const isWithinBounds = useCallback((place: Place, bounds: MapBounds): boolean => {
@@ -78,8 +81,8 @@ export function usePlaces() {
         setIsLoading(true);
         setError(null);
 
-        // 줌 레벨에 따라 검색 개수 조정 (기본적으로 많이 가져오도록 설정)
-        const numOfRows = 500;
+        // 거리순으로 정렬되므로 가까운 곳 위주로 가져옴
+        const numOfRows = NUM_OF_ROWS;
         const currentDept = dept !== undefined ? dept : department;
 
         try {
@@ -106,11 +109,14 @@ export function usePlaces() {
             const pharmacies: Place[] = pharmaciesData.success ? pharmaciesData.data : [];
 
             // API에서 이미 지역 기반으로 데이터를 가져오므로 클라이언트에서 bounds로 필터링하지 않음
-            setPlaces([...hospitals, ...pharmacies]);
+            const allPlaces = [...hospitals, ...pharmacies];
+            setPlaces(allPlaces);
+            setLastSearchCount(allPlaces.length); // 검색 결과 개수 저장
             lastFetchedBoundsRef.current = bounds;
             lastFetchedDepartmentRef.current = currentDept;
             lastCenterRef.current = center;
             lastZoomRef.current = zoom || 16;
+            initialSearchDoneRef.current = true; // 초기 검색 완료 표시
         } catch (err) {
             // 취소된 요청은 에러로 처리하지 않음
             if (err instanceof Error && err.name === 'AbortError') {
@@ -226,6 +232,12 @@ export function usePlaces() {
                 clearTimeout(debounceTimerRef.current);
             }
 
+            // 초기 검색이 안 된 상태면 즉시 검색 (debounce 없이)
+            if (!initialSearchDoneRef.current) {
+                fetchPlaces(center, bounds, zoom, department);
+                return;
+            }
+
             // 충분히 이동하지 않았으면 기존 데이터로 필터링만
             if (!shouldRefetch(lastFetchedBoundsRef.current, bounds)) {
                 return;
@@ -241,27 +253,18 @@ export function usePlaces() {
 
     // 현재 위치에서 다시 검색 (지도 이동 없이)
     const handleRefreshSearch = useCallback(() => {
-        const center = lastCenterRef.current;
-        const bounds = currentBounds;
+        // center 결정: lastCenterRef > userLocation > DEFAULT_LOCATION
+        const center = lastCenterRef.current || userLocation || DEFAULT_LOCATION;
 
-        if (!center) {
-            // center가 없으면 userLocation 사용
-            if (userLocation) {
-                const defaultBounds: MapBounds = {
-                    sw: { lat: userLocation.lat - 0.01, lng: userLocation.lng - 0.01 },
-                    ne: { lat: userLocation.lat + 0.01, lng: userLocation.lng + 0.01 }
-                };
-                lastFetchedBoundsRef.current = null;
-                fetchPlaces(userLocation, defaultBounds, lastZoomRef.current, department);
-            }
-            return;
-        }
+        // bounds 결정: currentBounds > lastFetchedBoundsRef > center 기준 기본 bounds 생성
+        const bounds = currentBounds || lastFetchedBoundsRef.current || {
+            sw: { lat: center.lat - 0.01, lng: center.lng - 0.01 },
+            ne: { lat: center.lat + 0.01, lng: center.lng + 0.01 }
+        };
 
-        if (bounds) {
-            // 캐시 초기화하여 강제 재검색
-            lastFetchedBoundsRef.current = null;
-            fetchPlaces(center, bounds, lastZoomRef.current, department);
-        }
+        // 캐시 초기화하여 강제 재검색
+        lastFetchedBoundsRef.current = null;
+        fetchPlaces(center, bounds, lastZoomRef.current, department);
     }, [fetchPlaces, currentBounds, userLocation, department]);
 
     // 내 위치에서 다시 찾기
@@ -341,6 +344,7 @@ export function usePlaces() {
         isLoading,
         isDetailLoading,
         error,
+        lastSearchCount, // 마지막 검색 결과 개수
         handleMapIdle,
         handleRefreshLocation,
         handleRefreshSearch,

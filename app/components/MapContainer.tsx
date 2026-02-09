@@ -14,6 +14,7 @@ interface MapContainerProps {
     onRefreshSearch?: () => void;
     onMapIdle?: (center: Location, bounds: MapBounds, zoom: number) => void;
     isLoading?: boolean;
+    lastSearchCount?: number | null; // API에서 반환된 실제 검색 결과 개수
 }
 
 // 기본 위치 (서울 시청)
@@ -30,7 +31,7 @@ const MARKER_COLORS = {
     closed: { bg: '#9ca3af', arrow: '#9ca3af' },
 };
 
-export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLocation, onRefreshSearch, onMapIdle, isLoading }: MapContainerProps) {
+export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLocation, onRefreshSearch, onMapIdle, isLoading, lastSearchCount }: MapContainerProps) {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<naver.maps.Map | null>(null);
     const markersRef = useRef<naver.maps.Marker[]>([]);
@@ -46,6 +47,47 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
     const { isLoaded } = useNaverMap();
     const [isMapReady, setIsMapReady] = useState(false);
     const [selectedCluster, setSelectedCluster] = useState<{ places: Place[]; position: { x: number; y: number } } | null>(null);
+
+    // 검색 상태 UI 관리
+    const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'loading' | 'success' | 'error' } | null>(null);
+    const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const prevLoadingRef = useRef(isLoading);
+    const prevSearchCountRef = useRef(lastSearchCount);
+
+    // 로딩 시작 감지
+    useEffect(() => {
+        if (isLoading && !prevLoadingRef.current) {
+            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+            setStatusMessage({ text: '주변 병원·약국을 검색하고 있어요', type: 'loading' });
+        }
+        prevLoadingRef.current = isLoading;
+    }, [isLoading]);
+
+    // 검색 완료 감지 (lastSearchCount가 변경되면 결과 표시)
+    useEffect(() => {
+        // lastSearchCount가 숫자이고, 이전 값과 다르면 검색이 완료된 것
+        if (typeof lastSearchCount === 'number' && lastSearchCount !== prevSearchCountRef.current) {
+            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+
+            if (lastSearchCount > 0) {
+                setStatusMessage({ text: '병원·약국을 찾았어요', type: 'success' });
+            } else {
+                setStatusMessage({ text: '주변에 검색된 장소가 없어요', type: 'error' });
+            }
+            // 2초 후 메시지 숨김
+            statusTimeoutRef.current = setTimeout(() => {
+                setStatusMessage(null);
+            }, 2000);
+        }
+        prevSearchCountRef.current = lastSearchCount;
+    }, [lastSearchCount]);
+
+    // cleanup
+    useEffect(() => {
+        return () => {
+            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+        };
+    }, []);
 
     // 내 위치에서 다시 찾기
     const handleRefreshClick = useCallback(() => {
@@ -65,6 +107,9 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
             zoom: map.getZoom(),
         };
     }, []);
+
+    // handleIdle 함수를 ref로 관리하여 다른 useEffect에서도 사용 가능하게
+    const handleIdleRef = useRef<(() => void) | null>(null);
 
     // 지도 초기화 및 이벤트 등록
     useEffect(() => {
@@ -99,11 +144,18 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
                 }
             };
 
+            // handleIdle을 ref에 저장하여 다른 useEffect에서도 호출 가능하게
+            handleIdleRef.current = handleIdle;
+
             // 즉시 ready 상태로 설정하여 마커 등이 그려질 수 있게 함
             setIsMapReady(true);
 
-            // 초기 위치에 대한 정보 전달 (idle 이벤트가 늦게 발생할 수 있으므로 선제적 호출)
-            handleIdle();
+            // 지도 렌더링이 완료된 후 초기 검색 실행 (requestAnimationFrame으로 DOM 안정화 대기)
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    handleIdle();
+                }, 100);
+            });
 
             // 이후 이동에 대해 지속적 리스너 등록
             idleListenerRef.current = window.naver.maps.Event.addListener(map, 'idle', handleIdle);
@@ -140,6 +192,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         });
 
         mapInstanceRef.current.setCenter(new window.naver.maps.LatLng(userLocation.lat, userLocation.lng));
+        // setCenter 호출 시 자동으로 idle 이벤트가 발생하므로 별도 호출 불필요
     }, [isMapReady, userLocation]);
 
     // 장소 클러스터링
@@ -281,12 +334,22 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
         <div className="relative w-full h-full">
             <div ref={mapRef} className="w-full h-full" style={{ minHeight: '400px' }} />
 
-            {/* 로딩 인디케이터 */}
-            {isLoading && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
-                    <div className="glass px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
-                        <span className="text-xs font-medium text-gray-700">검색중...</span>
+            {/* 검색 상태 인디케이터 */}
+            {statusMessage && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 transition-all duration-300">
+                    <div className={`px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 ${statusMessage.type === 'loading' ? 'glass' :
+                        statusMessage.type === 'success' ? 'bg-emerald-500 text-white' :
+                            'bg-gray-500 text-white'
+                        }`}>
+                        {statusMessage.type === 'loading' ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+                        ) : statusMessage.type === 'success' ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z" /></svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="currentColor"><path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z" /></svg>
+                        )}
+                        <span className={`text-xs font-medium ${statusMessage.type === 'loading' ? 'text-gray-700' : 'text-white'
+                            }`}>{statusMessage.text}</span>
                     </div>
                 </div>
             )}
