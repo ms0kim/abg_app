@@ -58,7 +58,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
     useEffect(() => {
         if (isLoading && !prevLoadingRef.current) {
             if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
-            setStatusMessage({ text: '주변 병원·약국을 검색하고 있어요', type: 'loading' });
+            setStatusMessage({ text: '검색하고 있어요', type: 'loading' });
         }
         prevLoadingRef.current = isLoading;
     }, [isLoading]);
@@ -72,7 +72,7 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
             if (lastSearchCount > 0) {
                 setStatusMessage({ text: '병원·약국을 찾았어요', type: 'success' });
             } else {
-                setStatusMessage({ text: '주변에 검색된 장소가 없어요', type: 'error' });
+                setStatusMessage({ text: '검색된 장소가 없어요', type: 'error' });
             }
             // 2초 후 메시지 숨김
             statusTimeoutRef.current = setTimeout(() => {
