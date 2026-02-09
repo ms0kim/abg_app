@@ -50,42 +50,56 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
     // 검색 상태 UI 관리
     const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'loading' | 'success' | 'error' } | null>(null);
+    const [isStatusVisible, setIsStatusVisible] = useState(false);
     const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const fadeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const prevLoadingRef = useRef(isLoading);
-    const prevSearchCountRef = useRef(lastSearchCount);
 
-    // 로딩 시작 감지
+    // 메시지 표시 (fade in)
+    const showStatus = useCallback((text: string, type: 'loading' | 'success' | 'error') => {
+        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+        if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current);
+        setStatusMessage({ text, type });
+        // 다음 프레임에서 visible로 변경하여 애니메이션 트리거
+        requestAnimationFrame(() => setIsStatusVisible(true));
+    }, []);
+
+    // 메시지 숨김 (fade out 후 제거)
+    const hideStatus = useCallback(() => {
+        setIsStatusVisible(false);
+        // fade out 애니메이션 후 메시지 제거 (300ms)
+        fadeTimeoutRef.current = setTimeout(() => {
+            setStatusMessage(null);
+        }, 300);
+    }, []);
+
+    // isLoading 상태 변화로 메시지 관리
     useEffect(() => {
+        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+
+        // 로딩 시작 (false → true)
         if (isLoading && !prevLoadingRef.current) {
-            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
-            setStatusMessage({ text: '검색하고 있어요', type: 'loading' });
+            showStatus('검색하고 있어요', 'loading');
         }
-        prevLoadingRef.current = isLoading;
-    }, [isLoading]);
-
-    // 검색 완료 감지 (lastSearchCount가 변경되면 결과 표시)
-    useEffect(() => {
-        // lastSearchCount가 숫자이고, 이전 값과 다르면 검색이 완료된 것
-        if (typeof lastSearchCount === 'number' && lastSearchCount !== prevSearchCountRef.current) {
-            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
-
-            if (lastSearchCount > 0) {
-                setStatusMessage({ text: '병원·약국을 찾았어요', type: 'success' });
+        // 로딩 완료 (true → false)
+        else if (!isLoading && prevLoadingRef.current) {
+            if (typeof lastSearchCount === 'number' && lastSearchCount > 0) {
+                showStatus('병원·약국을 찾았어요', 'success');
             } else {
-                setStatusMessage({ text: '검색된 장소가 없어요', type: 'error' });
+                showStatus('검색된 장소가 없어요', 'error');
             }
-            // 2초 후 메시지 숨김
-            statusTimeoutRef.current = setTimeout(() => {
-                setStatusMessage(null);
-            }, 2000);
+            // 2초 후 fade out
+            statusTimeoutRef.current = setTimeout(hideStatus, 2000);
         }
-        prevSearchCountRef.current = lastSearchCount;
-    }, [lastSearchCount]);
+
+        prevLoadingRef.current = isLoading;
+    }, [isLoading, lastSearchCount, showStatus, hideStatus]);
 
     // cleanup
     useEffect(() => {
         return () => {
             if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+            if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current);
         };
     }, []);
 
@@ -336,11 +350,18 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
 
             {/* 검색 상태 인디케이터 */}
             {statusMessage && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 transition-all duration-300">
-                    <div className={`px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 ${statusMessage.type === 'loading' ? 'glass' :
+                <div
+                    className={`absolute top-4 left-1/2 -translate-x-1/2 z-20 transition-all duration-300 ease-out ${
+                        isStatusVisible
+                            ? 'opacity-100 translate-y-0'
+                            : 'opacity-0 -translate-y-2'
+                    }`}
+                >
+                    <div className={`px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 ${
+                        statusMessage.type === 'loading' ? 'glass' :
                         statusMessage.type === 'success' ? 'bg-emerald-500 text-white' :
-                            'bg-gray-500 text-white'
-                        }`}>
+                        'bg-gray-500 text-white'
+                    }`}>
                         {statusMessage.type === 'loading' ? (
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
                         ) : statusMessage.type === 'success' ? (
@@ -348,8 +369,9 @@ export function MapContainer({ userLocation, places, onPlaceClick, onRefreshLoca
                         ) : (
                             <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="currentColor"><path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z" /></svg>
                         )}
-                        <span className={`text-xs font-medium ${statusMessage.type === 'loading' ? 'text-gray-700' : 'text-white'
-                            }`}>{statusMessage.text}</span>
+                        <span className={`text-xs font-medium ${
+                            statusMessage.type === 'loading' ? 'text-gray-700' : 'text-white'
+                        }`}>{statusMessage.text}</span>
                     </div>
                 </div>
             )}
